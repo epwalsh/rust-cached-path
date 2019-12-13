@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     for resource in opt.resource {
         let mut tx = tx.clone();
         tokio::spawn(async move {
-            let result = cached_path(&resource[..]).await.map_err(|_| {"failed"});
+            let result = cached_path(&resource[..]).await.map_err(|_| "failed");
             if tx.send((resource, result)).await.is_err() {
                 std::process::exit(1);
             };
