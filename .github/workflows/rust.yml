@@ -14,7 +14,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        components: clippy
+        components: rustfmt, clippy
         override: true
 
     - name: Build
@@ -23,11 +23,17 @@ jobs:
         command: build
         args: --verbose
 
-    - name: Lint
-      uses: actions-rs/clippy-check@v1
+    - name: Check formatting
+      uses: actions-rs/cargo@v1
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        args: --all-features
+        command: fmt
+        args: -- --check
+
+    - name: Lint
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: --all-targets --all-features -- -D warnings
 
     - name: Run Tests
       uses: actions-rs/cargo@v1
