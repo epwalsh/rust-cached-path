@@ -8,5 +8,5 @@ Rust module for downloading and caching files
 - [x] Make `cached_path` async
 - [x] Write docs
 - [ ] Publish to crates.
-- [ ] Handle multiple resources in CLI.
+- [x] Handle multiple resources in CLI.
 - [ ] Write meta data file alongside cached file. Check that resource string matches if cached file already exists.
