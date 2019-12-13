@@ -145,7 +145,7 @@ fn hash_str(s: &str) -> String {
     hasher.result_str()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Error {
     FileNotFound,
     HttpError,
@@ -172,18 +172,27 @@ impl error::Error for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::{mock, reset, server_address};
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    static ETAG_KEY: reqwest::header::HeaderName = ETAG;
 
     #[tokio::test]
     async fn test_url_to_filename() {
-        let cache = Cache::new(PathBuf::from("/tmp/cache"), reqwest::Client::new())
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::new(cache_dir.path().to_owned(), reqwest::Client::new())
             .await
             .unwrap();
+
         let url = reqwest::Url::parse("http://localhost:5000/foo.txt").unwrap();
         let etag = String::from("abcd");
+
         assert_eq!(
             cache.url_to_filepath(&url, Some(etag)).to_str().unwrap(),
             format!(
-                "/tmp/cache/{}.{}",
+                "{}/{}.{}",
+                cache_dir.path().to_str().unwrap(),
                 "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
                 "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589"
             )
@@ -191,9 +200,89 @@ mod tests {
         assert_eq!(
             cache.url_to_filepath(&url, None).to_str().unwrap(),
             format!(
-                "/tmp/cache/{}",
+                "{}/{}",
+                cache_dir.path().to_str().unwrap(),
                 "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
             )
         );
+    }
+
+    #[tokio::test]
+    async fn test_get_cached_path_local_file() {
+        // Setup cache.
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::new(cache_dir.path().to_owned(), reqwest::Client::new())
+            .await
+            .unwrap();
+
+        let path = cache.cached_path("README.md").await.unwrap();
+        assert_eq!(path, Path::new("README.md"));
+    }
+
+    #[tokio::test]
+    async fn test_get_cached_path_non_existant_local_file_fails() {
+        // Setup cache.
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::new(cache_dir.path().to_owned(), reqwest::Client::new())
+            .await
+            .unwrap();
+
+        let result = cache.cached_path("BLAH").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_resource() {
+        // Setup cache.
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::new(cache_dir.path().to_owned(), reqwest::Client::new())
+            .await
+            .unwrap();
+
+        // Mock the resource.
+        let server = server_address();
+        let _m = mock("GET", "/resource.txt")
+            .with_status(200)
+            .with_body("Hello, World!")
+            .create();
+        let _m = mock("HEAD", "/resource.txt")
+            .with_status(200)
+            .with_header(&ETAG_KEY.to_string()[..], "fake-etag")
+            .create();
+        let resource = format!("http://{}/resource.txt", server.to_string());
+
+        // Get the cached path.
+        let path = cache.cached_path(&resource[..]).await.unwrap();
+
+        // Ensure the file exists.
+        assert!(path.is_file());
+
+        // Ensure the contents of the file are correct.
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(&contents[..], "Hello, World!");
+
+        // Now update the resource.
+        reset();
+        let _m = mock("GET", "/resource.txt")
+            .with_status(200)
+            .with_body("Well hello again")
+            .create();
+        let _m = mock("HEAD", "/resource.txt")
+            .with_status(200)
+            .with_header(&ETAG_KEY.to_string()[..], "fake-etag-2")
+            .create();
+
+        // Get the new cached path.
+        let new_path = cache.cached_path(&resource[..]).await.unwrap();
+
+        // This should be different from the old path.
+        assert_ne!(path, new_path);
+
+        // Ensure the file exists.
+        assert!(new_path.is_file());
+
+        // Ensure the contents of the file are correct.
+        let new_contents = std::fs::read_to_string(&new_path).unwrap();
+        assert_eq!(&new_contents[..], "Well hello again");
     }
 }
