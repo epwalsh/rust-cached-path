@@ -8,10 +8,12 @@ use crypto::sha2::Sha256;
 use log::{debug, error};
 use reqwest::header::ETAG;
 use tempfile::NamedTempFile;
+use tokio::io::AsyncWriteExt;
+use tokio::fs::OpenOptions;
 
-pub fn cached_path(resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
+pub async fn cached_path(resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
     let cache = Cache::new(PathBuf::from("/tmp/cache"), reqwest::Client::new())?;
-    cache.cached_path(resource)
+    cache.cached_path(resource).await
 }
 
 pub struct Cache {
@@ -31,7 +33,7 @@ impl Cache {
         Ok(Cache { root, http_client })
     }
 
-    pub fn cached_path(&self, resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
+    pub async fn cached_path(&self, resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
         if !resource.starts_with("http") {
             debug!("Treating resource as local file");
             let path = PathBuf::from(resource);
@@ -44,28 +46,34 @@ impl Cache {
         }
 
         let url = reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl)?;
-        let etag = self.get_etag(&url)?;
+        let etag = self.get_etag(&url).await?;
         let path = self.url_to_filepath(&url, etag);
 
         // If path doesn't exist locally, need to download.
         if !path.is_file() {
             debug!("Downloading updated version of resource");
-            self.download_resource(&url, &path)?;
+            self.download_resource(&url, &path).await?;
         }
 
         Ok(path)
     }
 
-    fn download_resource(
+    async fn download_resource(
         &self,
         url: &reqwest::Url,
         path: &PathBuf,
     ) -> Result<(), Box<dyn error::Error>> {
-        if let Ok(mut response) = self.http_client.get(url.clone()).send() {
+        if let Ok(mut response) = self.http_client.get(url.clone()).send().await {
             // We write the content to a temporary file, and then if successful,
             // we copy the temp file to it's cache file.
-            let mut tempfile = NamedTempFile::new()?;
-            response.copy_to(&mut tempfile)?;
+            let tempfile = NamedTempFile::new()?;
+            // Seems inefficient to have two handles open, but we can't asyncronously
+            // write to the `tempfile` handle, so we have to open a new handle
+            // using tokio.
+            let mut tempfile_write_handler = OpenOptions::new().write(true).open(tempfile.path()).await?;
+            while let Some(chunk) = response.chunk().await? {
+                tempfile_write_handler.write_all(&chunk[..]).await?;
+            }
 
             // Now copy over the contents of the temp file to the cache file.
             fs::copy(tempfile.path(), path)?;
@@ -76,8 +84,8 @@ impl Cache {
         }
     }
 
-    fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Box<dyn error::Error>> {
-        let r = self.http_client.head(url.clone()).send()?;
+    async fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Box<dyn error::Error>> {
+        let r = self.http_client.head(url.clone()).send().await?;
         if let Some(etag) = r.headers().get(ETAG) {
             if let Ok(s) = etag.to_str() {
                 Ok(Some(s.into()))

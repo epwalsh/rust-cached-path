@@ -13,16 +13,17 @@ description = "Download and cache HTTP resources."
 
 [lib]
 name = "cached_path"
-path = "src/lib.rs"
+path = "src/lib.rs" 
 
 [[bin]]
 name = "cached_path"
 path = "src/main.rs"
 
 [dependencies]
-reqwest = "^0.9"
+reqwest = { version = "=0.10.0-alpha.2" }
 rust-crypto = "^0.2"
 tempfile = "^3.1"
 structopt = "^0.3"
 log = "^0.4"
 env_logger = "^0.7"
+tokio = { version = "=0.2.0-alpha.6" }

@@ -54,3 +54,15 @@ else ifneq ($(name),)
 else
 	$(error must supply 'issue' or 'name' parameter)
 endif
+
+.PHONY : delete-branch
+delete-branch :
+	@BRANCH=`git rev-parse --abbrev-ref HEAD` \
+		&& [ $$BRANCH != 'master' ] \
+		&& echo "On branch $$BRANCH" \
+		&& echo "Checking out master" \
+		&& git checkout master \
+		&& git pull \
+		&& echo "Deleting branch $$BRANCH" \
+		&& git branch -d $$BRANCH \
+		&& git remote prune origin
