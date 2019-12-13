@@ -1,39 +1,59 @@
+//! This crate contains utilities for downloading and caching static HTTP resources.
+//!
+//! ## Usage
+//!
+//! The simplest way to use this crate is through the [`cached_path`](fn.cached_path.html)
+//! function.
+//! If you need finer control over the caching directory, HTTP client,
+//! etc. you can construct a [`Cache`](struct.Cache.html) object directly.
+
+use std::env;
 use std::error;
 use std::fmt;
-use std::fs::{self, create_dir_all};
 use std::path::PathBuf;
 
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
-use log::{debug, error};
+use log::{debug, error, info};
 use reqwest::header::ETAG;
 use tempfile::NamedTempFile;
+use tokio::fs::{self, File, OpenOptions};
+use tokio::io::{self, AsyncWriteExt};
 
-pub fn cached_path(resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
-    let cache = Cache::new(PathBuf::from("/tmp/cache"), reqwest::Client::new())?;
-    cache.cached_path(resource)
+/// Try downloading and caching a static HTTP resource. If successful, the return value
+/// is the local path to the cached resource. This function will always check the ETAG
+/// of the resource to ensure the latest version is cached.
+///
+/// This also works for local files, in which case the return value is just the path original
+/// path.
+///
+/// The cache location will be `std::env::temp_dir() / cache`.
+pub async fn cached_path(resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
+    let cache = Cache::new(env::temp_dir().join("cache/"), reqwest::Client::new()).await?;
+    cache.cached_path(resource).await
 }
 
+/// When you need control over cache location or the HTTP client used to download
+/// resources, you can create a `Cache` instance and then use the instance method `cached_path`.
 pub struct Cache {
     root: PathBuf,
     http_client: reqwest::Client,
 }
 
-impl Default for Cache {
-    fn default() -> Self {
-        Self::new(PathBuf::from("/tmp/cache"), reqwest::Client::new()).unwrap()
-    }
-}
-
 impl Cache {
-    pub fn new(root: PathBuf, http_client: reqwest::Client) -> Result<Self, Box<dyn error::Error>> {
-        create_dir_all(&root)?;
+    /// Create a new `Cache` instance.
+    pub async fn new(
+        root: PathBuf,
+        http_client: reqwest::Client,
+    ) -> Result<Self, Box<dyn error::Error>> {
+        fs::create_dir_all(&root).await?;
         Ok(Cache { root, http_client })
     }
 
-    pub fn cached_path(&self, resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
+    /// Works just like [`cached_path`](fn.cached_path.html).
+    pub async fn cached_path(&self, resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
         if !resource.starts_with("http") {
-            debug!("Treating resource as local file");
+            info!("Treating resource as local file");
             let path = PathBuf::from(resource);
             if !path.is_file() {
                 error!("File not found");
@@ -44,31 +64,46 @@ impl Cache {
         }
 
         let url = reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl)?;
-        let etag = self.get_etag(&url)?;
+        let etag = self.get_etag(&url).await?;
         let path = self.url_to_filepath(&url, etag);
 
         // If path doesn't exist locally, need to download.
         if !path.is_file() {
-            debug!("Downloading updated version of resource");
-            self.download_resource(&url, &path)?;
+            info!("Downloading updated version of resource");
+            self.download_resource(&url, &path).await?;
         }
 
         Ok(path)
     }
 
-    fn download_resource(
+    async fn download_resource(
         &self,
         url: &reqwest::Url,
         path: &PathBuf,
     ) -> Result<(), Box<dyn error::Error>> {
-        if let Ok(mut response) = self.http_client.get(url.clone()).send() {
-            // We write the content to a temporary file, and then if successful,
-            // we copy the temp file to it's cache file.
-            let mut tempfile = NamedTempFile::new()?;
-            response.copy_to(&mut tempfile)?;
-
-            // Now copy over the contents of the temp file to the cache file.
-            fs::copy(tempfile.path(), path)?;
+        if let Ok(mut response) = self.http_client.get(url.clone()).send().await {
+            debug!("Opened connection to resource");
+            // First we make a temporary file and downlaod the contents of the resource into it.
+            // Otherwise, if we wrote directly to the cache file and the download got
+            // interrupted, we could be left with a corrupted cache file.
+            let tempfile = NamedTempFile::new()?;
+            // TODO: Seems inefficient to have two handles open, but we can't asyncronously
+            // write to the `tempfile` handle, so we have to open a new handle
+            // using tokio.
+            let mut tempfile_write_handle =
+                OpenOptions::new().write(true).open(tempfile.path()).await?;
+            debug!("Starting download");
+            while let Some(chunk) = response.chunk().await? {
+                tempfile_write_handle.write_all(&chunk[..]).await?;
+            }
+            debug!("Download complete");
+            // Resource successfully written to the tempfile, so we can copy the tempfile
+            // over to the cache file.
+            let mut tempfile_read_handle =
+                OpenOptions::new().read(true).open(tempfile.path()).await?;
+            let mut cache_file_write_handle = File::create(path).await?;
+            debug!("Copying resource temp file to cache location");
+            io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle).await?;
             Ok(())
         } else {
             error!("Failed to download resource");
@@ -76,8 +111,8 @@ impl Cache {
         }
     }
 
-    fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Box<dyn error::Error>> {
-        let r = self.http_client.head(url.clone()).send()?;
+    async fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Box<dyn error::Error>> {
+        let r = self.http_client.head(url.clone()).send().await?;
         if let Some(etag) = r.headers().get(ETAG) {
             if let Ok(s) = etag.to_str() {
                 Ok(Some(s.into()))
@@ -138,9 +173,11 @@ impl error::Error for Error {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_url_to_filename() {
-        let cache = Cache::default();
+    #[tokio::test]
+    async fn test_url_to_filename() {
+        let cache = Cache::new(PathBuf::from("/tmp/cache"), reqwest::Client::new())
+            .await
+            .unwrap();
         let url = reqwest::Url::parse("http://localhost:5000/foo.txt").unwrap();
         let etag = String::from("abcd");
         assert_eq!(

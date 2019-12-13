@@ -1,6 +1,6 @@
 [package]
 name = "cached-path"
-version = "0.1.0"
+version = "0.1.0-alpha"
 authors = ["epwalsh <epwalsh10@gmail.com>"]
 edition = "2018"
 keywords = ["http", "caching"]
@@ -13,16 +13,17 @@ description = "Download and cache HTTP resources."
 
 [lib]
 name = "cached_path"
-path = "src/lib.rs"
+path = "src/lib.rs" 
 
 [[bin]]
 name = "cached_path"
 path = "src/main.rs"
 
 [dependencies]
-reqwest = "^0.9"
+reqwest = { git = "https://github.com/seanmonstar/reqwest", commit = "5d639ecbde270bb44c4703c168cfce4729d9e2b3" }
 rust-crypto = "^0.2"
 tempfile = "^3.1"
 structopt = "^0.3"
 log = "^0.4"
 env_logger = "^0.7"
+tokio = { version = "0.2", features = ["macros", "io-util", "fs", "sync"] }
