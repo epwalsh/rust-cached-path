@@ -1,3 +1,12 @@
+//! This crate contains utilities for downloading and caching static HTTP resources.
+//!
+//! ## Usage
+//!
+//! The simplest way to use this crate is through the [`cached_path`](fn.cached_path.html)
+//! function.
+//! If you need finer control over the caching directory, HTTP client,
+//! etc. you can construct a [`Cache`](struct.Cache.html) object directly.
+
 use std::env;
 use std::error;
 use std::fmt;
@@ -41,7 +50,7 @@ impl Cache {
         Ok(Cache { root, http_client })
     }
 
-    /// Works just like `cached_path`.
+    /// Works just like [`cached_path`](fn.cached_path.html).
     pub async fn cached_path(&self, resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
         if !resource.starts_with("http") {
             info!("Treating resource as local file");
