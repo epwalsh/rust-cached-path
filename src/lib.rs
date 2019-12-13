@@ -53,7 +53,7 @@ impl Cache {
             self.download_resource(&url, &path)?;
         }
 
-        return Ok(path);
+        Ok(path)
     }
 
     fn download_resource(
