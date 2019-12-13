@@ -5,16 +5,12 @@ use std::path::PathBuf;
 
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
+use log::{debug, error};
 use reqwest::header::ETAG;
 use tempfile::NamedTempFile;
 
-pub fn cached_path(
-    resource: &str,
-) -> Result<PathBuf, Box<dyn error::Error>> {
-    let cache = Cache::new(
-        PathBuf::from("/tmp/cache"),
-        reqwest::Client::new(),
-    )?;
+pub fn cached_path(resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
+    let cache = Cache::new(PathBuf::from("/tmp/cache"), reqwest::Client::new())?;
     cache.cached_path(resource)
 }
 
@@ -37,9 +33,10 @@ impl Cache {
 
     pub fn cached_path(&self, resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
         if !resource.starts_with("http") {
-            // Treat as local file, see if it exists.
+            debug!("Treating resource as local file");
             let path = PathBuf::from(resource);
             if !path.is_file() {
+                error!("File not found");
                 return Err(Error::FileNotFound.into());
             } else {
                 return Ok(path);
@@ -47,11 +44,12 @@ impl Cache {
         }
 
         let url = reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl)?;
-        let etag = self.get_etag(&url);
+        let etag = self.get_etag(&url)?;
         let path = self.url_to_filepath(&url, etag);
 
         // If path doesn't exist locally, need to download.
         if !path.is_file() {
+            debug!("Downloading updated version of resource");
             self.download_resource(&url, &path)?;
         }
 
@@ -73,24 +71,21 @@ impl Cache {
             fs::copy(tempfile.path(), path)?;
             Ok(())
         } else {
+            error!("Failed to download resource");
             Err(Error::HttpError.into())
         }
     }
 
-    fn get_etag(&self, url: &reqwest::Url) -> Option<String> {
-        match self.http_client.head(url.clone()).send() {
-            Ok(r) => {
-                if let Some(etag) = r.headers().get(ETAG) {
-                    if let Ok(s) = etag.to_str() {
-                        Some(s.into())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+    fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Box<dyn error::Error>> {
+        let r = self.http_client.head(url.clone()).send()?;
+        if let Some(etag) = r.headers().get(ETAG) {
+            if let Ok(s) = etag.to_str() {
+                Ok(Some(s.into()))
+            } else {
+                Ok(None)
             }
-            _ => None,
+        } else {
+            Ok(None)
         }
     }
 
