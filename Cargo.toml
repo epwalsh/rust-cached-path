@@ -20,7 +20,7 @@ name = "cached_path"
 path = "src/main.rs"
 
 [dependencies]
-reqwest = { git = "https://github.com/seanmonstar/reqwest", commit = "5d639ecbde270bb44c4703c168cfce4729d9e2b3" }
+reqwest = { git = "https://github.com/seanmonstar/reqwest", version = "0.10.0-alpha.2" }
 rust-crypto = "^0.2"
 tempfile = "^3.1"
 structopt = "^0.3"
