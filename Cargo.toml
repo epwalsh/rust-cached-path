@@ -20,10 +20,10 @@ name = "cached_path"
 path = "src/main.rs"
 
 [dependencies]
-reqwest = { version = "=0.10.0-alpha.2" }
+reqwest = { git = "https://github.com/seanmonstar/reqwest", commit = "5d639ecbde270bb44c4703c168cfce4729d9e2b3" }
 rust-crypto = "^0.2"
 tempfile = "^3.1"
 structopt = "^0.3"
 log = "^0.4"
 env_logger = "^0.7"
-tokio = { version = "=0.2.0-alpha.6" }
+tokio = { version = "0.2", features = ["macros", "io-util", "fs"] }
