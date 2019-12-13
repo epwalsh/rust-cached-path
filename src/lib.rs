@@ -1,31 +1,47 @@
+use std::env;
 use std::error;
 use std::fmt;
 use std::path::PathBuf;
 
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
-use log::{debug, info, error};
+use log::{debug, error, info};
 use reqwest::header::ETAG;
 use tempfile::NamedTempFile;
-use tokio::io::{self, AsyncWriteExt};
 use tokio::fs::{self, File, OpenOptions};
+use tokio::io::{self, AsyncWriteExt};
 
+/// Try downloading and caching a static HTTP resource. If successful, the return value
+/// is the local path to the cached resource. This function will always check the ETAG
+/// of the resource to ensure the latest version is cached.
+///
+/// This also works for local files, in which case the return value is just the path original
+/// path.
+///
+/// The cache location will be `std::env::temp_dir() / cache`.
 pub async fn cached_path(resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
-    let cache = Cache::new(PathBuf::from("/tmp/cache"), reqwest::Client::new()).await?;
+    let cache = Cache::new(env::temp_dir().join("cache/"), reqwest::Client::new()).await?;
     cache.cached_path(resource).await
 }
 
+/// When you need control over cache location or the HTTP client used to download
+/// resources, you can create a `Cache` instance and then use the instance method `cached_path`.
 pub struct Cache {
     root: PathBuf,
     http_client: reqwest::Client,
 }
 
 impl Cache {
-    pub async fn new(root: PathBuf, http_client: reqwest::Client) -> Result<Self, Box<dyn error::Error>> {
+    /// Create a new `Cache` instance.
+    pub async fn new(
+        root: PathBuf,
+        http_client: reqwest::Client,
+    ) -> Result<Self, Box<dyn error::Error>> {
         fs::create_dir_all(&root).await?;
         Ok(Cache { root, http_client })
     }
 
+    /// Works just like `cached_path`.
     pub async fn cached_path(&self, resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
         if !resource.starts_with("http") {
             info!("Treating resource as local file");
@@ -65,7 +81,8 @@ impl Cache {
             // TODO: Seems inefficient to have two handles open, but we can't asyncronously
             // write to the `tempfile` handle, so we have to open a new handle
             // using tokio.
-            let mut tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path()).await?;
+            let mut tempfile_write_handle =
+                OpenOptions::new().write(true).open(tempfile.path()).await?;
             debug!("Starting download");
             while let Some(chunk) = response.chunk().await? {
                 tempfile_write_handle.write_all(&chunk[..]).await?;
@@ -73,7 +90,8 @@ impl Cache {
             debug!("Download complete");
             // Resource successfully written to the tempfile, so we can copy the tempfile
             // over to the cache file.
-            let mut tempfile_read_handle = OpenOptions::new().read(true).open(tempfile.path()).await?;
+            let mut tempfile_read_handle =
+                OpenOptions::new().read(true).open(tempfile.path()).await?;
             let mut cache_file_write_handle = File::create(path).await?;
             debug!("Copying resource temp file to cache location");
             io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle).await?;
@@ -148,7 +166,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_url_to_filename() {
-        let cache = Cache::new(PathBuf::from("/tmp/cache"), reqwest::Client::new()).await.unwrap();
+        let cache = Cache::new(PathBuf::from("/tmp/cache"), reqwest::Client::new())
+            .await
+            .unwrap();
         let url = reqwest::Url::parse("http://localhost:5000/foo.txt").unwrap();
         let etag = String::from("abcd");
         assert_eq!(
