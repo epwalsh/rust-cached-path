@@ -14,6 +14,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
+        components: clippy
         override: true
 
     - name: Build
@@ -21,6 +22,12 @@ jobs:
       with:
         command: build
         args: --verbose
+
+    - name: Lint
+      uses: actions-rs/clippy-check@v1
+      with:
+        # token: ${{ secrets.GITHUB_TOKEN }}
+        args: --all-features
 
     - name: Run Tests
       uses: actions-rs/cargo@v1
