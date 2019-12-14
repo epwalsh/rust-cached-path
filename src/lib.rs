@@ -1,11 +1,36 @@
-//! This crate contains utilities for downloading and caching static HTTP resources.
+//! Provides a simple async interface for accessing both local and remote files.
 //!
-//! ## Usage
+//! For remote resources, `cached_path` downloads and caches the latest version of the resource.
+//! Each time `cached_path` is called for a remote file, the ETAG is checked against the cached
+//! version and if it's out of date the file will be downloaded again. The path returned is the
+//! path to the cached file:
 //!
-//! The simplest way to use this crate is through the [`cached_path`](fn.cached_path.html)
-//! function.
-//! If you need finer control over the caching directory, HTTP client,
-//! etc. you can construct a [`Cache`](struct.Cache.html) object directly.
+//! ```rust
+//! use cached_path::cached_path;
+//!
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let path = cached_path("https://github.com/epwalsh/rust-cached-path/blob/master/README.md").await?;
+//! assert!(path.is_file());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! For local files, the path returned is just the original path supplied:
+//!
+//! ```rust
+//! use cached_path::cached_path;
+//!
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let path = cached_path("README.md").await?;
+//! assert_eq!(path.to_str().unwrap(), "README.md");
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! When you need more control over the cache location or the HTTP client used to download files,
+//! you can create a instance of the `Cache` struct and then use the method `.cached_path`.
 
 use std::env;
 use std::error;
