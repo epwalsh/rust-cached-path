@@ -172,9 +172,10 @@ impl error::Error for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockito::{mock, reset, server_address};
     use std::path::Path;
     use tempfile::tempdir;
+    use httpmock::Method::{GET, HEAD};
+    use httpmock::{mock, with_mock_server};
 
     static ETAG_KEY: reqwest::header::HeaderName = ETAG;
 
@@ -232,27 +233,33 @@ mod tests {
     }
 
     #[tokio::test]
+    #[with_mock_server]
     async fn test_download_resource() {
+        let _ = env_logger::try_init();
+
         // Setup cache.
         let cache_dir = tempdir().unwrap();
         let cache = Cache::new(cache_dir.path().to_owned(), reqwest::Client::new())
             .await
             .unwrap();
 
+        let resource = "http://localhost:5000/resource.txt";
+
         // Mock the resource.
-        let server = server_address();
-        let _m = mock("GET", "/resource.txt")
-            .with_status(200)
-            .with_body("Hello, World!")
+        let mut mock_1 = mock(GET, "/resource.txt")
+            .return_status(200)
+            .return_body("Hello, World!")
             .create();
-        let _m = mock("HEAD", "/resource.txt")
-            .with_status(200)
-            .with_header(&ETAG_KEY.to_string()[..], "fake-etag")
+        let mut mock_1_header = mock(HEAD, "/resource.txt")
+            .return_status(200)
+            .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
             .create();
-        let resource = format!("http://{}/resource.txt", server.to_string());
 
         // Get the cached path.
         let path = cache.cached_path(&resource[..]).await.unwrap();
+
+        assert_eq!(mock_1.times_called(), 1);
+        assert_eq!(mock_1_header.times_called(), 1);
 
         // Ensure the file exists.
         assert!(path.is_file());
@@ -262,18 +269,22 @@ mod tests {
         assert_eq!(&contents[..], "Hello, World!");
 
         // Now update the resource.
-        reset();
-        let _m = mock("GET", "/resource.txt")
-            .with_status(200)
-            .with_body("Well hello again")
+        mock_1.delete();
+        mock_1_header.delete();
+        let mock_2 = mock(GET, "/resource.txt")
+            .return_status(200)
+            .return_body("Well hello again")
             .create();
-        let _m = mock("HEAD", "/resource.txt")
-            .with_status(200)
-            .with_header(&ETAG_KEY.to_string()[..], "fake-etag-2")
+        let mock_2_header = mock(HEAD, "/resource.txt")
+            .return_status(200)
+            .return_header(&ETAG_KEY.to_string()[..], "fake-etag-2")
             .create();
 
         // Get the new cached path.
         let new_path = cache.cached_path(&resource[..]).await.unwrap();
+
+        assert_eq!(mock_2.times_called(), 1);
+        assert_eq!(mock_2_header.times_called(), 1);
 
         // This should be different from the old path.
         assert_ne!(path, new_path);
