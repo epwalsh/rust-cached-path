@@ -24,7 +24,7 @@ use tokio::io::{self, AsyncWriteExt};
 /// is the local path to the cached resource. This function will always check the ETAG
 /// of the resource to ensure the latest version is cached.
 ///
-/// This also works for local files, in which case the return value is just the path original
+/// This also works for local files, in which case the return value is just the original
 /// path.
 ///
 /// The cache location will be `std::env::temp_dir() / cache`.
@@ -235,7 +235,8 @@ mod tests {
     #[tokio::test]
     #[with_mock_server]
     async fn test_download_resource() {
-        let _ = env_logger::try_init();
+        // For debugging:
+        // let _ = env_logger::try_init();
 
         // Setup cache.
         let cache_dir = tempdir().unwrap();
