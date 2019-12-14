@@ -172,10 +172,10 @@ impl error::Error for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
-    use tempfile::tempdir;
     use httpmock::Method::{GET, HEAD};
     use httpmock::{mock, with_mock_server};
+    use std::path::Path;
+    use tempfile::tempdir;
 
     static ETAG_KEY: reqwest::header::HeaderName = ETAG;
 
