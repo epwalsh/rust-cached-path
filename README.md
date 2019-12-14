@@ -23,4 +23,4 @@ For local files, the path returned is just the original path supplied:
 README.md
 ```
 
-When you need more control over the cache location or the HTTP client used to download files, you can create a instance of the `cached_path::Cache` struct and then use method `.cached_path`.
+When you need more control over the cache location or the HTTP client used to download files, you can create a instance of the `cached_path::Cache` struct and then use the method `.cached_path`.
