@@ -23,13 +23,13 @@ jobs:
         command: build
         args: --verbose
 
-    - name: Check formatting
+    - name: Lin with RustFmt
       uses: actions-rs/cargo@v1
       with:
         command: fmt
         args: -- --check
 
-    - name: Lint
+    - name: Lint with Clippy
       uses: actions-rs/cargo@v1
       with:
         command: clippy
