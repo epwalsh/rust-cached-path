@@ -54,9 +54,17 @@ use tokio::io::{self, AsyncWriteExt};
 /// This also works for local files, in which case the return value is just the original
 /// path.
 ///
-/// The cache location will be `std::env::temp_dir() / cache`.
+/// The cache location will be `std::env::temp_dir().join("cache/")` unless the environment
+/// variable `RUST_CACHED_PATH_ROOT` is set.
 pub async fn cached_path(resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
-    let cache = Cache::new(env::temp_dir().join("cache/"), reqwest::Client::new()).await?;
+    let root: PathBuf;
+    if let Some(root_str) = env::var_os("RUST_CACHED_PATH_ROOT") {
+        root = PathBuf::from(root_str);
+    } else {
+        root = env::temp_dir().join("cache/")
+    }
+    debug!("Using {} as cache root", root.to_string_lossy());
+    let cache = Cache::new(root, reqwest::Client::new()).await?;
     cache.cached_path(resource).await
 }
 
