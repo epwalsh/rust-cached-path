@@ -1,4 +1,6 @@
-//! Provides a simple async interface for accessing both local and remote files.
+//! The idea behind `cache-path` is to provide a single, simple async interface for
+//! accessing both local and remote files. This can be used behind other APIs that need
+//! to access files agnostic to where they are located.
 //!
 //! For remote resources, `cached_path` downloads and caches the latest version of the resource.
 //! Each time `cached_path` is called for a remote file, the ETAG is checked against the cached
