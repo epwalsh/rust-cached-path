@@ -102,23 +102,21 @@ impl Cache {
         let url = reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl)?;
         let etag = self.get_etag(&url).await?;
         let path = self.url_to_filepath(&url, &etag);
-        let meta = Meta {
-            resource: String::from(resource),
-            etag,
-        };
 
         // If resource + meta data already exist and meta data matches, no need to download again.
         if path.exists() {
-            if let Ok(existing_meta) = Meta::from_file(&path).await {
-                if existing_meta == meta {
-                    debug!("Cached version is up-to-date");
-                    return Ok(path);
-                }
-            }
+            debug!("Cached version is up-to-date");
+            return Ok(path);
         }
 
         info!("Downloading updated version of resource");
         self.download_resource(&url, &path).await?;
+
+        debug!("Writing meta data to file");
+        let meta = Meta {
+            resource: String::from(resource),
+            etag,
+        };
         meta.to_file(&path).await?;
 
         Ok(path)
@@ -210,20 +208,20 @@ fn meta_path(resource_path: &PathBuf) -> PathBuf {
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-struct Meta {
+pub struct Meta {
     resource: String,
     etag: Option<String>,
 }
 
 impl Meta {
-    async fn to_file(&self, resource_path: &PathBuf) -> Result<(), Box<dyn error::Error>> {
+    pub async fn to_file(&self, resource_path: &PathBuf) -> Result<(), Box<dyn error::Error>> {
         let meta_path = meta_path(resource_path);
         let serialized = serde_json::to_string(self).unwrap();
         fs::write(meta_path, &serialized[..]).await?;
         Ok(())
     }
 
-    async fn from_file(resource_path: &PathBuf) -> Result<Self, Box<dyn error::Error>> {
+    pub async fn from_file(resource_path: &PathBuf) -> Result<Self, Box<dyn error::Error>> {
         let meta_path = meta_path(resource_path);
         let serialized = fs::read_to_string(meta_path).await?;
         let meta: Meta = serde_json::from_str(&serialized[..]).unwrap();
