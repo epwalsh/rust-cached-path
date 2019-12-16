@@ -43,6 +43,7 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use log::{debug, error, info};
 use reqwest::header::ETAG;
+use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{self, AsyncWriteExt};
@@ -100,13 +101,25 @@ impl Cache {
 
         let url = reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl)?;
         let etag = self.get_etag(&url).await?;
-        let path = self.url_to_filepath(&url, etag);
+        let path = self.url_to_filepath(&url, &etag);
+        let meta = Meta {
+            resource: String::from(resource),
+            etag,
+        };
 
-        // If path doesn't exist locally, need to download.
-        if !path.is_file() {
-            info!("Downloading updated version of resource");
-            self.download_resource(&url, &path).await?;
+        // If resource + meta data already exist and meta data matches, no need to download again.
+        if path.exists() {
+            if let Ok(existing_meta) = Meta::from_file(&path).await {
+                if existing_meta == meta {
+                    debug!("Cached version is up-to-date");
+                    return Ok(path);
+                }
+            }
         }
+
+        info!("Downloading updated version of resource");
+        self.download_resource(&url, &path).await?;
+        meta.to_file(&path).await?;
 
         Ok(path)
     }
@@ -122,26 +135,31 @@ impl Cache {
             // Otherwise, if we wrote directly to the cache file and the download got
             // interrupted, we could be left with a corrupted cache file.
             let tempfile = NamedTempFile::new()?;
-            // TODO: Seems inefficient to have two handles open, but we can't asyncronously
-            // write to the `tempfile` handle, so we have to open a new handle
-            // using tokio.
             let mut tempfile_write_handle =
                 OpenOptions::new().write(true).open(tempfile.path()).await?;
+
             debug!("Starting download");
+
             while let Some(chunk) = response.chunk().await? {
                 tempfile_write_handle.write_all(&chunk[..]).await?;
             }
+
             debug!("Download complete");
+
             // Resource successfully written to the tempfile, so we can copy the tempfile
             // over to the cache file.
             let mut tempfile_read_handle =
                 OpenOptions::new().read(true).open(tempfile.path()).await?;
             let mut cache_file_write_handle = File::create(path).await?;
+
             debug!("Copying resource temp file to cache location");
+
             io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle).await?;
+
             Ok(())
         } else {
             error!("Failed to download resource");
+
             Err(Error::HttpError.into())
         }
     }
@@ -159,17 +177,20 @@ impl Cache {
         }
     }
 
-    fn url_to_filepath(&self, url: &reqwest::Url, etag: Option<String>) -> PathBuf {
+    fn url_to_filepath(&self, url: &reqwest::Url, etag: &Option<String>) -> PathBuf {
         let url_string = url.clone().into_string();
         let url_hash = hash_str(&url_string[..]);
         let filename: String;
+
         if let Some(tag) = etag {
             let etag_hash = hash_str(&tag[..]);
             filename = format!("{}.{}", url_hash, etag_hash);
         } else {
             filename = url_hash;
         }
+
         let filepath = PathBuf::from(filename);
+
         self.root.join(filepath)
     }
 }
@@ -178,6 +199,36 @@ fn hash_str(s: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.input_str(s);
     hasher.result_str()
+}
+
+fn meta_path(resource_path: &PathBuf) -> PathBuf {
+    let mut meta_path = resource_path.clone();
+    let resource_file_name = meta_path.file_name().unwrap().to_str().unwrap();
+    let meta_file_name = format!("{}.meta", resource_file_name);
+    meta_path.set_file_name(&meta_file_name[..]);
+    meta_path
+}
+
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct Meta {
+    resource: String,
+    etag: Option<String>,
+}
+
+impl Meta {
+    async fn to_file(&self, resource_path: &PathBuf) -> Result<(), Box<dyn error::Error>> {
+        let meta_path = meta_path(resource_path);
+        let serialized = serde_json::to_string(self).unwrap();
+        fs::write(meta_path, &serialized[..]).await?;
+        Ok(())
+    }
+
+    async fn from_file(resource_path: &PathBuf) -> Result<Self, Box<dyn error::Error>> {
+        let meta_path = meta_path(resource_path);
+        let serialized = fs::read_to_string(meta_path).await?;
+        let meta: Meta = serde_json::from_str(&serialized[..]).unwrap();
+        Ok(meta)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -225,7 +276,7 @@ mod tests {
         let etag = String::from("abcd");
 
         assert_eq!(
-            cache.url_to_filepath(&url, Some(etag)).to_str().unwrap(),
+            cache.url_to_filepath(&url, &Some(etag)).to_str().unwrap(),
             format!(
                 "{}/{}.{}",
                 cache_dir.path().to_str().unwrap(),
@@ -234,7 +285,7 @@ mod tests {
             )
         );
         assert_eq!(
-            cache.url_to_filepath(&url, None).to_str().unwrap(),
+            cache.url_to_filepath(&url, &None).to_str().unwrap(),
             format!(
                 "{}/{}",
                 cache_dir.path().to_str().unwrap(),
@@ -297,8 +348,9 @@ mod tests {
         assert_eq!(mock_1.times_called(), 1);
         assert_eq!(mock_1_header.times_called(), 1);
 
-        // Ensure the file exists.
+        // Ensure the file and meta exist.
         assert!(path.is_file());
+        assert!(meta_path(&path).is_file());
 
         // Ensure the contents of the file are correct.
         let contents = std::fs::read_to_string(&path).unwrap();
@@ -325,8 +377,9 @@ mod tests {
         // This should be different from the old path.
         assert_ne!(path, new_path);
 
-        // Ensure the file exists.
+        // Ensure the file and meta exist.
         assert!(new_path.is_file());
+        assert!(meta_path(&new_path).is_file());
 
         // Ensure the contents of the file are correct.
         let new_contents = std::fs::read_to_string(&new_path).unwrap();
