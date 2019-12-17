@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use exitfailure::ExitFailure;
-use failure::Error;
+use failure::ResultExt;
 use log::debug;
 use reqwest::Client;
 use structopt::StructOpt;
@@ -43,7 +43,7 @@ async fn main() -> Result<(), ExitFailure> {
 
     debug!("{:?}", opt);
 
-    let http_client = build_http_client(&opt).map_err(Error::from_boxed_compat)?;
+    let http_client = build_http_client(&opt).context("Failed to build HTTP client")?;
     let root = opt
         .root
         .unwrap_or_else(|| std::env::temp_dir().join("cache/"));
@@ -80,9 +80,7 @@ async fn main() -> Result<(), ExitFailure> {
     Ok(())
 }
 
-fn build_http_client(
-    opt: &Opt,
-) -> Result<Client, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+fn build_http_client(opt: &Opt) -> Result<Client, reqwest::Error> {
     let mut http_client_builder = Client::builder();
 
     if let Some(timeout) = opt.timeout {
