@@ -39,6 +39,8 @@ use std::error;
 use std::fmt;
 use std::path::PathBuf;
 
+#[macro_use]
+extern crate lazy_static;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use log::{debug, error, info};
@@ -48,29 +50,34 @@ use tempfile::NamedTempFile;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{self, AsyncWriteExt};
 
+lazy_static! {
+    /// The default cache directory. This can be set through the environment
+    /// variable `RUST_CACHED_PATH_ROOT`. Otherwise it will be set to a subdirectory
+    /// named 'cache' of the default system temp directory.
+    pub static ref DEFAULT_CACHE_ROOT: PathBuf = {
+        if let Some(root_str) = env::var_os("RUST_CACHED_PATH_ROOT") {
+            PathBuf::from(root_str)
+        } else {
+            env::temp_dir().join("cache/")
+        }
+    };
+}
+
 /// Try downloading and caching a static HTTP resource. If successful, the return value
 /// is the local path to the cached resource. This function will always check the ETAG
 /// of the resource to ensure the latest version is cached.
 ///
 /// This also works for local files, in which case the return value is just the original
 /// path.
-///
-/// The cache location will be `std::env::temp_dir().join("cache/")` unless the environment
-/// variable `RUST_CACHED_PATH_ROOT` is set.
 pub async fn cached_path(resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
-    let root: PathBuf;
-    if let Some(root_str) = env::var_os("RUST_CACHED_PATH_ROOT") {
-        root = PathBuf::from(root_str);
-    } else {
-        root = env::temp_dir().join("cache/")
-    }
-    debug!("Using {} as cache root", root.to_string_lossy());
+    let root = DEFAULT_CACHE_ROOT.clone();
     let cache = Cache::new(root, reqwest::Client::new()).await?;
     cache.cached_path(resource).await
 }
 
 /// When you need control over cache location or the HTTP client used to download
 /// resources, you can create a `Cache` instance and then use the instance method `cached_path`.
+#[derive(Debug, Clone)]
 pub struct Cache {
     root: PathBuf,
     http_client: reqwest::Client,
@@ -82,6 +89,7 @@ impl Cache {
         root: PathBuf,
         http_client: reqwest::Client,
     ) -> Result<Self, Box<dyn error::Error>> {
+        debug!("Using {} as cache root", root.to_string_lossy());
         fs::create_dir_all(&root).await?;
         Ok(Cache { root, http_client })
     }
@@ -90,6 +98,7 @@ impl Cache {
     pub async fn cached_path(&self, resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
         if !resource.starts_with("http") {
             info!("Treating resource as local file");
+
             let path = PathBuf::from(resource);
             if !path.is_file() {
                 error!("File not found");
@@ -110,9 +119,11 @@ impl Cache {
         }
 
         info!("Downloading updated version of resource");
+
         self.download_resource(&url, &path).await?;
 
         debug!("Writing meta data to file");
+
         let meta = Meta {
             resource: String::from(resource),
             etag,
@@ -129,6 +140,7 @@ impl Cache {
     ) -> Result<(), Box<dyn error::Error>> {
         if let Ok(mut response) = self.http_client.get(url.clone()).send().await {
             debug!("Opened connection to resource");
+
             // First we make a temporary file and downlaod the contents of the resource into it.
             // Otherwise, if we wrote directly to the cache file and the download got
             // interrupted, we could be left with a corrupted cache file.
