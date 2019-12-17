@@ -47,9 +47,7 @@ async fn main() -> Result<(), ExitFailure> {
     let root = opt
         .root
         .unwrap_or_else(|| std::env::temp_dir().join("cache/"));
-    let cache = Cache::new(root, http_client)
-        .await
-        .map_err(Error::from_boxed_compat)?;
+    let cache = Cache::new(root, http_client).await?;
 
     let (tx, mut rx) = channel(100);
 
@@ -58,10 +56,7 @@ async fn main() -> Result<(), ExitFailure> {
         let resource = resource.clone();
         let cache = cache.clone();
         tokio::spawn(async move {
-            let result = cache
-                .cached_path(&resource[..])
-                .await
-                .map_err(Error::from_boxed_compat);
+            let result = cache.cached_path(&resource[..]).await;
             if tx.send((resource, result)).await.is_err() {
                 std::process::exit(1);
             };

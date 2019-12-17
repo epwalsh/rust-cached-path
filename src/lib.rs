@@ -11,7 +11,7 @@
 //! use cached_path::cached_path;
 //!
 //! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+//! # async fn main() -> Result<(), cached_path::Error> {
 //! let path = cached_path("https://github.com/epwalsh/rust-cached-path/blob/master/README.md").await?;
 //! assert!(path.is_file());
 //! # Ok(())
@@ -24,7 +24,7 @@
 //! use cached_path::cached_path;
 //!
 //! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+//! # async fn main() -> Result<(), cached_path::Error> {
 //! let path = cached_path("README.md").await?;
 //! assert_eq!(path.to_str().unwrap(), "README.md");
 //! # Ok(())
@@ -46,7 +46,7 @@ mod meta;
 pub(crate) mod utils;
 
 pub use crate::cache::Cache;
-pub use crate::error::Error;
+pub use crate::error::{Error, ErrorKind};
 pub use crate::meta::Meta;
 
 lazy_static! {
@@ -68,10 +68,8 @@ lazy_static! {
 ///
 /// This also works for local files, in which case the return value is just the original
 /// path.
-pub async fn cached_path(
-    resource: &str,
-) -> Result<PathBuf, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+pub async fn cached_path(resource: &str) -> Result<PathBuf, Error> {
     let root = DEFAULT_CACHE_ROOT.clone();
     let cache = Cache::new(root, reqwest::Client::new()).await?;
-    cache.cached_path(resource).await
+    Ok(cache.cached_path(resource).await?)
 }

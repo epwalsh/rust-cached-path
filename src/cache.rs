@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use failure::ResultExt;
 use log::{debug, info};
 use reqwest::header::ETAG;
 use tempfile::NamedTempFile;
@@ -7,7 +8,7 @@ use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{self, AsyncWriteExt};
 
 use crate::utils::hash_str;
-use crate::{Error, Meta};
+use crate::{Error, ErrorKind, Meta};
 
 /// When you need control over cache location or the HTTP client used to download
 /// resources, you can create a `Cache` instance and then use the instance method `cached_path`.
@@ -19,33 +20,29 @@ pub struct Cache {
 
 impl Cache {
     /// Create a new `Cache` instance.
-    pub async fn new(
-        root: PathBuf,
-        http_client: reqwest::Client,
-    ) -> Result<Self, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+    pub async fn new(root: PathBuf, http_client: reqwest::Client) -> Result<Self, Error> {
         debug!("Using {} as cache root", root.to_string_lossy());
-        fs::create_dir_all(&root).await?;
+        fs::create_dir_all(&root)
+            .await
+            .context(ErrorKind::IoWriteError)?;
         Ok(Cache { root, http_client })
     }
 
     /// Works just like [`cached_path`](fn.cached_path.html).
-    pub async fn cached_path(
-        &self,
-        resource: &str,
-    ) -> Result<PathBuf, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+    pub async fn cached_path(&self, resource: &str) -> Result<PathBuf, Error> {
         if !resource.starts_with("http") {
             info!("Treating resource as local file");
 
             let path = PathBuf::from(resource);
             if !path.is_file() {
-                return Err(Error::FileNotFound(String::from(resource)).into());
+                return Err(ErrorKind::FileNotFound(String::from(resource)).into());
             } else {
                 return Ok(path);
             }
         }
 
-        let url =
-            reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl(String::from(resource)))?;
+        let url = reqwest::Url::parse(resource)
+            .map_err(|_| ErrorKind::InvalidUrl(String::from(resource)))?;
         let etag = self.get_etag(&url).await?;
         let path = self.url_to_filepath(&url, &etag);
 
@@ -70,11 +67,7 @@ impl Cache {
         Ok(path)
     }
 
-    async fn download_resource(
-        &self,
-        url: &reqwest::Url,
-        path: &PathBuf,
-    ) -> Result<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+    async fn download_resource(&self, url: &reqwest::Url, path: &PathBuf) -> Result<(), Error> {
         let mut response = self
             .http_client
             .get(url.clone())
@@ -87,35 +80,44 @@ impl Cache {
         // First we make a temporary file and downlaod the contents of the resource into it.
         // Otherwise, if we wrote directly to the cache file and the download got
         // interrupted, we could be left with a corrupted cache file.
-        let tempfile = NamedTempFile::new()?;
-        let mut tempfile_write_handle =
-            OpenOptions::new().write(true).open(tempfile.path()).await?;
+        let tempfile = NamedTempFile::new().context(ErrorKind::IoWriteError)?;
+        let mut tempfile_write_handle = OpenOptions::new()
+            .write(true)
+            .open(tempfile.path())
+            .await
+            .context(ErrorKind::IoWriteError)?;
 
         debug!("Starting download");
 
         while let Some(chunk) = response.chunk().await? {
-            tempfile_write_handle.write_all(&chunk[..]).await?;
+            tempfile_write_handle
+                .write_all(&chunk[..])
+                .await
+                .context(ErrorKind::IoWriteError)?;
         }
 
         debug!("Download complete");
 
         // Resource successfully written to the tempfile, so we can copy the tempfile
         // over to the cache file.
-        let mut tempfile_read_handle = OpenOptions::new().read(true).open(tempfile.path()).await?;
-        let mut cache_file_write_handle = File::create(path).await?;
+        let mut tempfile_read_handle = OpenOptions::new()
+            .read(true)
+            .open(tempfile.path())
+            .await
+            .context(ErrorKind::IoReadError)?;
+        let mut cache_file_write_handle =
+            File::create(path).await.context(ErrorKind::IoWriteError)?;
 
         debug!("Copying resource temp file to cache location");
 
-        io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle).await?;
+        io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle)
+            .await
+            .context(ErrorKind::IoCopyError)?;
 
         Ok(())
     }
 
-    async fn get_etag(
-        &self,
-        url: &reqwest::Url,
-    ) -> Result<Option<String>, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>>
-    {
+    async fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Error> {
         let r = self.http_client.head(url.clone()).send().await?;
         if let Some(etag) = r.headers().get(ETAG) {
             if let Ok(s) = etag.to_str() {

@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 
+use failure::ResultExt;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 use crate::utils::meta_path;
+use crate::{Error, ErrorKind};
 
 /// Holds information about a cached resource.
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -13,13 +15,12 @@ pub struct Meta {
 }
 
 impl Meta {
-    pub(crate) async fn to_file(
-        &self,
-        resource_path: &PathBuf,
-    ) -> Result<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+    pub(crate) async fn to_file(&self, resource_path: &PathBuf) -> Result<(), Error> {
         let meta_path = meta_path(resource_path);
         let serialized = serde_json::to_string(self).unwrap();
-        fs::write(meta_path, &serialized[..]).await?;
+        fs::write(meta_path, &serialized[..])
+            .await
+            .context(ErrorKind::IoWriteError)?;
         Ok(())
     }
 
@@ -31,7 +32,7 @@ impl Meta {
     /// use cached_path::{cached_path, Meta};
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+    /// # async fn main() -> Result<(), cached_path::Error> {
     /// let resource = "https://github.com/epwalsh/rust-cached-path/blob/master/README.md";
     /// let path = cached_path(resource).await?;
     /// let meta = Meta::from_cache(&path).await?;
@@ -39,11 +40,11 @@ impl Meta {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn from_cache(
-        resource_path: &PathBuf,
-    ) -> Result<Self, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+    pub async fn from_cache(resource_path: &PathBuf) -> Result<Self, Error> {
         let meta_path = meta_path(resource_path);
-        let serialized = fs::read_to_string(meta_path).await?;
+        let serialized = fs::read_to_string(meta_path)
+            .await
+            .context(ErrorKind::IoReadError)?;
         let meta: Meta = serde_json::from_str(&serialized[..]).unwrap();
         Ok(meta)
     }
