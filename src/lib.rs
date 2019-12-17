@@ -1,4 +1,4 @@
-//! The idea behind `cache-path` is to provide a unified simple async interface for
+//! The idea behind `cached-path` is to provide a unified simple async interface for
 //! accessing both local and remote files. This can be used behind other APIs that need
 //! to access files agnostic to where they are located.
 //!
@@ -33,7 +33,21 @@
 //!
 //! When you need more control over the cache location or the HTTP client used to download files,
 //! you can create a instance of the [`Cache`](struct.Cache.html) struct and then use
-//! the method [`.cached_path`](struct.Cache.html#method.cached_path).
+//! the method [`.cached_path`](struct.Cache.html#method.cached_path):
+//!
+//! ```rust
+//! use cached_path::Cache;
+//!
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), cached_path::Error> {
+//! let cache = Cache::new(
+//!     std::env::temp_dir().join("my-cache/"),
+//!     reqwest::Client::new(),
+//! ).await?;
+//! let path = cache.cached_path("README.md").await?;
+//! # Ok(())
+//! # }
+//! ```
 
 use std::env;
 use std::path::PathBuf;
