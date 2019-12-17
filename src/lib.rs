@@ -11,7 +11,7 @@
 //! use cached_path::cached_path;
 //!
 //! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn main() -> Result<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
 //! let path = cached_path("https://github.com/epwalsh/rust-cached-path/blob/master/README.md").await?;
 //! assert!(path.is_file());
 //! # Ok(())
@@ -24,7 +24,7 @@
 //! use cached_path::cached_path;
 //!
 //! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn main() -> Result<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
 //! let path = cached_path("README.md").await?;
 //! assert_eq!(path.to_str().unwrap(), "README.md");
 //! # Ok(())
@@ -35,7 +35,6 @@
 //! you can create a instance of the `Cache` struct and then use the method `.cached_path`.
 
 use std::env;
-use std::error;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -43,7 +42,7 @@ use std::path::PathBuf;
 extern crate lazy_static;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
-use log::{debug, error, info};
+use log::{debug, info};
 use reqwest::header::ETAG;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
@@ -69,7 +68,9 @@ lazy_static! {
 ///
 /// This also works for local files, in which case the return value is just the original
 /// path.
-pub async fn cached_path(resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
+pub async fn cached_path(
+    resource: &str,
+) -> Result<PathBuf, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
     let root = DEFAULT_CACHE_ROOT.clone();
     let cache = Cache::new(root, reqwest::Client::new()).await?;
     cache.cached_path(resource).await
@@ -88,27 +89,30 @@ impl Cache {
     pub async fn new(
         root: PathBuf,
         http_client: reqwest::Client,
-    ) -> Result<Self, Box<dyn error::Error>> {
+    ) -> Result<Self, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
         debug!("Using {} as cache root", root.to_string_lossy());
         fs::create_dir_all(&root).await?;
         Ok(Cache { root, http_client })
     }
 
     /// Works just like [`cached_path`](fn.cached_path.html).
-    pub async fn cached_path(&self, resource: &str) -> Result<PathBuf, Box<dyn error::Error>> {
+    pub async fn cached_path(
+        &self,
+        resource: &str,
+    ) -> Result<PathBuf, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
         if !resource.starts_with("http") {
             info!("Treating resource as local file");
 
             let path = PathBuf::from(resource);
             if !path.is_file() {
-                error!("File not found");
-                return Err(Error::FileNotFound.into());
+                return Err(Error::FileNotFound(String::from(resource)).into());
             } else {
                 return Ok(path);
             }
         }
 
-        let url = reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl)?;
+        let url =
+            reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl(String::from(resource)))?;
         let etag = self.get_etag(&url).await?;
         let path = self.url_to_filepath(&url, &etag);
 
@@ -137,44 +141,48 @@ impl Cache {
         &self,
         url: &reqwest::Url,
         path: &PathBuf,
-    ) -> Result<(), Box<dyn error::Error>> {
-        if let Ok(mut response) = self.http_client.get(url.clone()).send().await {
-            debug!("Opened connection to resource");
+    ) -> Result<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
+        let mut response = self
+            .http_client
+            .get(url.clone())
+            .send()
+            .await?
+            .error_for_status()?;
 
-            // First we make a temporary file and downlaod the contents of the resource into it.
-            // Otherwise, if we wrote directly to the cache file and the download got
-            // interrupted, we could be left with a corrupted cache file.
-            let tempfile = NamedTempFile::new()?;
-            let mut tempfile_write_handle =
-                OpenOptions::new().write(true).open(tempfile.path()).await?;
+        debug!("Opened connection to resource");
 
-            debug!("Starting download");
+        // First we make a temporary file and downlaod the contents of the resource into it.
+        // Otherwise, if we wrote directly to the cache file and the download got
+        // interrupted, we could be left with a corrupted cache file.
+        let tempfile = NamedTempFile::new()?;
+        let mut tempfile_write_handle =
+            OpenOptions::new().write(true).open(tempfile.path()).await?;
 
-            while let Some(chunk) = response.chunk().await? {
-                tempfile_write_handle.write_all(&chunk[..]).await?;
-            }
+        debug!("Starting download");
 
-            debug!("Download complete");
-
-            // Resource successfully written to the tempfile, so we can copy the tempfile
-            // over to the cache file.
-            let mut tempfile_read_handle =
-                OpenOptions::new().read(true).open(tempfile.path()).await?;
-            let mut cache_file_write_handle = File::create(path).await?;
-
-            debug!("Copying resource temp file to cache location");
-
-            io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle).await?;
-
-            Ok(())
-        } else {
-            error!("Failed to download resource");
-
-            Err(Error::HttpError.into())
+        while let Some(chunk) = response.chunk().await? {
+            tempfile_write_handle.write_all(&chunk[..]).await?;
         }
+
+        debug!("Download complete");
+
+        // Resource successfully written to the tempfile, so we can copy the tempfile
+        // over to the cache file.
+        let mut tempfile_read_handle = OpenOptions::new().read(true).open(tempfile.path()).await?;
+        let mut cache_file_write_handle = File::create(path).await?;
+
+        debug!("Copying resource temp file to cache location");
+
+        io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle).await?;
+
+        Ok(())
     }
 
-    async fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Box<dyn error::Error>> {
+    async fn get_etag(
+        &self,
+        url: &reqwest::Url,
+    ) -> Result<Option<String>, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>>
+    {
         let r = self.http_client.head(url.clone()).send().await?;
         if let Some(etag) = r.headers().get(ETAG) {
             if let Ok(s) = etag.to_str() {
@@ -227,7 +235,10 @@ pub struct Meta {
 }
 
 impl Meta {
-    async fn to_file(&self, resource_path: &PathBuf) -> Result<(), Box<dyn error::Error>> {
+    async fn to_file(
+        &self,
+        resource_path: &PathBuf,
+    ) -> Result<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
         let meta_path = meta_path(resource_path);
         let serialized = serde_json::to_string(self).unwrap();
         fs::write(meta_path, &serialized[..]).await?;
@@ -242,7 +253,7 @@ impl Meta {
     /// use cached_path::{cached_path, Meta};
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
     /// let resource = "https://github.com/epwalsh/rust-cached-path/blob/master/README.md";
     /// let path = cached_path(resource).await?;
     /// let meta = Meta::from_cache(&path).await?;
@@ -250,7 +261,9 @@ impl Meta {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn from_cache(resource_path: &PathBuf) -> Result<Self, Box<dyn error::Error>> {
+    pub async fn from_cache(
+        resource_path: &PathBuf,
+    ) -> Result<Self, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync>> {
         let meta_path = meta_path(resource_path);
         let serialized = fs::read_to_string(meta_path).await?;
         let meta: Meta = serde_json::from_str(&serialized[..]).unwrap();
@@ -260,23 +273,25 @@ impl Meta {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Error {
-    FileNotFound,
-    HttpError,
-    InvalidUrl,
+    FileNotFound(String),
+    InvalidUrl(String),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::FileNotFound => write!(f, "file not found"),
-            Self::HttpError => write!(f, "HTTP error"),
-            Self::InvalidUrl => write!(f, "invalid URL"),
+        match *self {
+            Error::FileNotFound(ref path) => write!(
+                f,
+                "resource treated as local file but file doesn't exist ({})",
+                path
+            ),
+            Error::InvalidUrl(ref url) => write!(f, "invalid URL ({})", url),
         }
     }
 }
 
-impl error::Error for Error {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         // Generic error, underlying cause isn't tracked.
         None
     }
