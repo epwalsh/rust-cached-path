@@ -1,11 +1,10 @@
 use std::path::PathBuf;
 
-use failure::ResultExt;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 use crate::utils::meta_path;
-use crate::{Error, ErrorKind};
+use crate::Error;
 
 /// Holds information about a cached resource.
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -18,9 +17,7 @@ impl Meta {
     pub(crate) async fn to_file(&self, resource_path: &PathBuf) -> Result<(), Error> {
         let meta_path = meta_path(resource_path);
         let serialized = serde_json::to_string(self).unwrap();
-        fs::write(meta_path, &serialized[..])
-            .await
-            .context(ErrorKind::IoWriteError)?;
+        fs::write(meta_path, &serialized[..]).await?;
         Ok(())
     }
 
@@ -42,9 +39,7 @@ impl Meta {
     /// ```
     pub async fn from_cache(resource_path: &PathBuf) -> Result<Self, Error> {
         let meta_path = meta_path(resource_path);
-        let serialized = fs::read_to_string(meta_path)
-            .await
-            .context(ErrorKind::IoReadError)?;
+        let serialized = fs::read_to_string(meta_path).await?;
         let meta: Meta = serde_json::from_str(&serialized[..]).unwrap();
         Ok(meta)
     }

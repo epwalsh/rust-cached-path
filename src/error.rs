@@ -20,14 +20,8 @@ pub enum ErrorKind {
     #[fail(display = "Unable to parse resource URL ({})", _0)]
     InvalidUrl(String),
 
-    #[fail(display = "An error occurred while trying to write file")]
-    IoWriteError,
-
-    #[fail(display = "An error occurred while trying to read file")]
-    IoReadError,
-
-    #[fail(display = "An error occurred while trying to copy file")]
-    IoCopyError,
+    #[fail(display = "An IO error occurred: {:?}", _0)]
+    IoError(Option<tokio::io::ErrorKind>),
 
     #[fail(display = "HTTP response had status code {}", _0)]
     HttpStatusError(u16),
@@ -58,6 +52,14 @@ impl fmt::Display for Error {
 impl Error {
     pub fn kind(&self) -> ErrorKind {
         self.inner.get_context().clone()
+    }
+}
+
+impl From<tokio::io::Error> for Error {
+    fn from(err: tokio::io::Error) -> Error {
+        Error {
+            inner: Context::new(ErrorKind::IoError(Some(err.kind()))),
+        }
     }
 }
 

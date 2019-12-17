@@ -22,9 +22,7 @@ impl Cache {
     /// Create a new `Cache` instance.
     pub async fn new(root: PathBuf, http_client: reqwest::Client) -> Result<Self, Error> {
         debug!("Using {} as cache root", root.to_string_lossy());
-        fs::create_dir_all(&root)
-            .await
-            .context(ErrorKind::IoWriteError)?;
+        fs::create_dir_all(&root).await?;
         Ok(Cache { root, http_client })
     }
 
@@ -80,39 +78,26 @@ impl Cache {
         // First we make a temporary file and downlaod the contents of the resource into it.
         // Otherwise, if we wrote directly to the cache file and the download got
         // interrupted, we could be left with a corrupted cache file.
-        let tempfile = NamedTempFile::new().context(ErrorKind::IoWriteError)?;
-        let mut tempfile_write_handle = OpenOptions::new()
-            .write(true)
-            .open(tempfile.path())
-            .await
-            .context(ErrorKind::IoWriteError)?;
+        let tempfile = NamedTempFile::new().context(ErrorKind::IoError(None))?;
+        let mut tempfile_write_handle =
+            OpenOptions::new().write(true).open(tempfile.path()).await?;
 
         debug!("Starting download");
 
         while let Some(chunk) = response.chunk().await? {
-            tempfile_write_handle
-                .write_all(&chunk[..])
-                .await
-                .context(ErrorKind::IoWriteError)?;
+            tempfile_write_handle.write_all(&chunk[..]).await?;
         }
 
         debug!("Download complete");
 
         // Resource successfully written to the tempfile, so we can copy the tempfile
         // over to the cache file.
-        let mut tempfile_read_handle = OpenOptions::new()
-            .read(true)
-            .open(tempfile.path())
-            .await
-            .context(ErrorKind::IoReadError)?;
-        let mut cache_file_write_handle =
-            File::create(path).await.context(ErrorKind::IoWriteError)?;
+        let mut tempfile_read_handle = OpenOptions::new().read(true).open(tempfile.path()).await?;
+        let mut cache_file_write_handle = File::create(path).await?;
 
         debug!("Copying resource temp file to cache location");
 
-        io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle)
-            .await
-            .context(ErrorKind::IoCopyError)?;
+        io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle).await?;
 
         Ok(())
     }
