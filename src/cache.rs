@@ -11,7 +11,8 @@ use crate::utils::hash_str;
 use crate::{Error, ErrorKind, Meta};
 
 /// When you need control over cache location or the HTTP client used to download
-/// resources, you can create a `Cache` instance and then use the instance method `cached_path`.
+/// resources, you can create a [`Cache`](struct.Cache.html) instance and then use the
+/// instance method [`cached_path`](struct.Cache.html#method.cached_path).
 #[derive(Debug, Clone)]
 pub struct Cache {
     root: PathBuf,

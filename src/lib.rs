@@ -1,9 +1,9 @@
-//! The idea behind `cache-path` is to provide a single, simple async interface for
+//! The idea behind `cache-path` is to provide a unified simple async interface for
 //! accessing both local and remote files. This can be used behind other APIs that need
 //! to access files agnostic to where they are located.
 //!
-//! For remote resources, `cached_path` downloads and caches the latest version of the resource.
-//! Each time `cached_path` is called for a remote file, the ETAG is checked against the cached
+//! For remote resources, [`cached_path`](fn.cached_path.html) downloads and caches the latest version of the resource.
+//! Each time [`cached_path`](fn.cached_path.html) is called for a remote file, the ETAG is checked against the cached
 //! version and if it's out of date the file will be downloaded again. The path returned is the
 //! path to the cached file:
 //!
@@ -32,7 +32,8 @@
 //! ```
 //!
 //! When you need more control over the cache location or the HTTP client used to download files,
-//! you can create a instance of the `Cache` struct and then use the method `.cached_path`.
+//! you can create a instance of the [`Cache`](struct.Cache.html) struct and then use
+//! the method [`.cached_path`](struct.Cache.html#method.cached_path).
 
 use std::env;
 use std::path::PathBuf;
