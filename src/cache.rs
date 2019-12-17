@@ -33,7 +33,7 @@ impl Cache {
 
             let path = PathBuf::from(resource);
             if !path.is_file() {
-                return Err(ErrorKind::FileNotFound(String::from(resource)).into());
+                return Err(ErrorKind::ResourceNotFound(String::from(resource)).into());
             } else {
                 return Ok(path);
             }

@@ -15,7 +15,7 @@ pub enum ErrorKind {
         display = "Treated resource as local file, but file does not exist ({})",
         _0
     )]
-    FileNotFound(String),
+    ResourceNotFound(String),
 
     #[fail(display = "Unable to parse resource URL ({})", _0)]
     InvalidUrl(String),
