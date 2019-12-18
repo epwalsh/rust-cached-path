@@ -3,9 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use exitfailure::ExitFailure;
-use failure::ResultExt;
 use log::debug;
-use reqwest::Client;
 use structopt::StructOpt;
 use tokio::sync::mpsc::channel;
 
@@ -43,11 +41,18 @@ async fn main() -> Result<(), ExitFailure> {
 
     debug!("{:?}", opt);
 
-    let http_client = build_http_client(&opt).context("Failed to build HTTP client")?;
-    let root = opt
-        .root
-        .unwrap_or_else(|| std::env::temp_dir().join("cache/"));
-    let cache = Cache::new(root, http_client).await?;
+    let mut cache_builder = Cache::builder();
+    if let Some(root) = opt.root {
+        cache_builder = cache_builder.root(root);
+    }
+    if let Some(timeout) = opt.timeout {
+        cache_builder = cache_builder.timeout(Duration::from_secs(timeout));
+    }
+    if let Some(connect_timeout) = opt.connect_timeout {
+        cache_builder = cache_builder.connect_timeout(Duration::from_secs(connect_timeout));
+    }
+
+    let cache = cache_builder.build().await?;
 
     let (tx, mut rx) = channel(100);
 
@@ -78,19 +83,4 @@ async fn main() -> Result<(), ExitFailure> {
     }
 
     Ok(())
-}
-
-fn build_http_client(opt: &Opt) -> Result<Client, reqwest::Error> {
-    let mut http_client_builder = Client::builder();
-
-    if let Some(timeout) = opt.timeout {
-        http_client_builder = http_client_builder.timeout(Duration::from_secs(timeout));
-    }
-
-    if let Some(connect_timeout) = opt.connect_timeout {
-        http_client_builder =
-            http_client_builder.connect_timeout(Duration::from_secs(connect_timeout));
-    }
-
-    Ok(http_client_builder.build()?)
 }

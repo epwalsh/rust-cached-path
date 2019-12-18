@@ -29,6 +29,9 @@ pub enum ErrorKind {
     #[fail(display = "HTTP response timeout out")]
     HttpTimeoutError,
 
+    #[fail(display = "HTTP builder error")]
+    HttpBuilderError,
+
     #[fail(display = "An HTTP error occurred")]
     HttpError,
 }
@@ -72,6 +75,10 @@ impl From<reqwest::Error> for Error {
         } else if err.is_timeout() {
             Error {
                 inner: Context::new(ErrorKind::HttpTimeoutError),
+            }
+        } else if err.is_builder() {
+            Error {
+                inner: Context::new(ErrorKind::HttpBuilderError),
             }
         } else {
             Error {
