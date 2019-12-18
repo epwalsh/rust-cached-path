@@ -176,6 +176,7 @@ impl Cache {
                         return Err(err);
                     }
                     if !err.is_retriable() {
+                        error!("ETAG fetch for {} failed with fatal error", resource);
                         return Err(err);
                     }
                     retries += 1;
@@ -205,6 +206,7 @@ impl Cache {
                         return Err(err);
                     }
                     if !err.is_retriable() {
+                        error!("Download failed for {} with fatal error", resource);
                         return Err(err);
                     }
                     retries += 1;
