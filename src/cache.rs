@@ -40,6 +40,7 @@ struct Config {
     root: Option<PathBuf>,
     client_builder: ClientBuilder,
     max_retries: u32,
+    max_backoff: u32,
 }
 
 impl CacheBuilder {
@@ -50,6 +51,7 @@ impl CacheBuilder {
                 root: None,
                 client_builder: ClientBuilder::new(),
                 max_retries: 3,
+                max_backoff: 5000,
             },
         }
     }
@@ -89,6 +91,12 @@ impl CacheBuilder {
         self
     }
 
+    /// Set the maximum backoff delay in milliseconds for retrying HTTP requests.
+    pub fn max_backoff(mut self, max_backoff: u32) -> CacheBuilder {
+        self.config.max_backoff = max_backoff;
+        self
+    }
+
     /// Build the `Cache` object.
     pub async fn build(self) -> Result<Cache, Error> {
         let root = self
@@ -103,6 +111,7 @@ impl CacheBuilder {
             root,
             http_client,
             max_retries: self.config.max_retries,
+            max_backoff: self.config.max_backoff,
         })
     }
 }
@@ -124,6 +133,7 @@ pub struct Cache {
     root: PathBuf,
     http_client: Client,
     max_retries: u32,
+    max_backoff: u32,
 }
 
 impl Cache {
@@ -221,7 +231,10 @@ impl Cache {
     fn get_retry_delay(&self, retries: u32) -> u32 {
         let between = Uniform::from(0..1000);
         let mut rng = rand::thread_rng();
-        2u32.pow(retries - 1) * 1000 + between.sample(&mut rng)
+        std::cmp::min(
+            2u32.pow(retries - 1) * 1000 + between.sample(&mut rng),
+            self.max_backoff,
+        )
     }
 
     async fn download_resource(&self, url: &reqwest::Url, path: &PathBuf) -> Result<(), Error> {
