@@ -49,7 +49,6 @@
 //! # }
 //! ```
 
-use std::env;
 use std::path::PathBuf;
 
 #[macro_use]
@@ -60,22 +59,9 @@ mod error;
 mod meta;
 pub(crate) mod utils;
 
-pub use crate::cache::Cache;
+pub use crate::cache::{Cache, CacheBuilder, DEFAULT_CACHE_ROOT};
 pub use crate::error::{Error, ErrorKind};
 pub use crate::meta::Meta;
-
-lazy_static! {
-    /// The default cache directory. This can be set through the environment
-    /// variable `RUST_CACHED_PATH_ROOT`. Otherwise it will be set to a subdirectory
-    /// named 'cache' of the default system temp directory.
-    pub static ref DEFAULT_CACHE_ROOT: PathBuf = {
-        if let Some(root_str) = env::var_os("RUST_CACHED_PATH_ROOT") {
-            PathBuf::from(root_str)
-        } else {
-            env::temp_dir().join("cache/")
-        }
-    };
-}
 
 /// Try downloading and caching a static HTTP resource. If successful, the return value
 /// is the local path to the cached resource. This function will always check the ETAG

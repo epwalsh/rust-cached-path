@@ -1,8 +1,13 @@
+use std::default::Default;
+use std::env;
+use std::fs::create_dir_all;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use failure::ResultExt;
 use log::{debug, info};
 use reqwest::header::ETAG;
+use reqwest::{Client, ClientBuilder};
 use tempfile::NamedTempFile;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{self, AsyncWriteExt};
@@ -10,21 +15,111 @@ use tokio::io::{self, AsyncWriteExt};
 use crate::utils::hash_str;
 use crate::{Error, ErrorKind, Meta};
 
+lazy_static! {
+    /// The default cache directory. This can be set through the environment
+    /// variable `RUST_CACHED_PATH_ROOT`. Otherwise it will be set to a subdirectory
+    /// named 'cache' of the default system temp directory.
+    pub static ref DEFAULT_CACHE_ROOT: PathBuf = {
+        if let Some(root_str) = env::var_os("RUST_CACHED_PATH_ROOT") {
+            PathBuf::from(root_str)
+        } else {
+            env::temp_dir().join("cache/")
+        }
+    };
+}
+
+/// Builder to facilitate creating [`Cache`](struct.Cache.html) objects.
+#[derive(Debug)]
+pub struct CacheBuilder {
+    config: Config,
+}
+
+#[derive(Debug)]
+struct Config {
+    root: Option<PathBuf>,
+    client_builder: ClientBuilder,
+}
+
+impl CacheBuilder {
+    /// Construct a new `CacheBuilder`.
+    pub fn new() -> CacheBuilder {
+        CacheBuilder {
+            config: Config {
+                root: None,
+                client_builder: ClientBuilder::new(),
+            },
+        }
+    }
+
+    /// Construct a new `CacheBuilder` with a `ClientBuilder`.
+    pub fn with_client_builder(client_builder: ClientBuilder) -> CacheBuilder {
+        CacheBuilder::new().client_builder(client_builder)
+    }
+
+    /// Set the root directory.
+    pub fn root(mut self, root: PathBuf) -> CacheBuilder {
+        self.config.root = Some(root);
+        self
+    }
+
+    /// Set the `ClientBuilder`.
+    pub fn client_builder(mut self, client_builder: ClientBuilder) -> CacheBuilder {
+        self.config.client_builder = client_builder;
+        self
+    }
+
+    /// Enable a request timeout.
+    pub fn timeout(mut self, timeout: Duration) -> CacheBuilder {
+        self.config.client_builder = self.config.client_builder.timeout(timeout);
+        self
+    }
+
+    /// Enable a timeout for the connect phase of each HTTP request.
+    pub fn connect_timeout(mut self, timeout: Duration) -> CacheBuilder {
+        self.config.client_builder = self.config.client_builder.connect_timeout(timeout);
+        self
+    }
+
+    /// Build the `Cache` object.
+    pub async fn build(self) -> Result<Cache, Error> {
+        let root = self
+            .config
+            .root
+            .unwrap_or_else(|| DEFAULT_CACHE_ROOT.clone());
+        let http_client = self.config.client_builder.build()?;
+        Cache::new(root, http_client).await
+    }
+}
+
+impl Default for CacheBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// When you need control over cache location or the HTTP client used to download
 /// resources, you can create a [`Cache`](struct.Cache.html) instance and then use the
 /// instance method [`cached_path`](struct.Cache.html#method.cached_path).
+///
+/// If you're going to be making more than a handful of calls to `cached_path`, this
+/// is the recommended way to do it.
 #[derive(Debug, Clone)]
 pub struct Cache {
     root: PathBuf,
-    http_client: reqwest::Client,
+    http_client: Client,
 }
 
 impl Cache {
     /// Create a new `Cache` instance.
-    pub async fn new(root: PathBuf, http_client: reqwest::Client) -> Result<Self, Error> {
+    pub async fn new(root: PathBuf, http_client: Client) -> Result<Self, Error> {
         debug!("Using {} as cache root", root.to_string_lossy());
         fs::create_dir_all(&root).await?;
         Ok(Cache { root, http_client })
+    }
+
+    /// Create a `CacheBuilder`.
+    pub fn builder() -> CacheBuilder {
+        CacheBuilder::new()
     }
 
     /// Works just like [`cached_path`](fn.cached_path.html).
@@ -134,6 +229,18 @@ impl Cache {
     }
 }
 
+impl Default for Cache {
+    fn default() -> Self {
+        let root = DEFAULT_CACHE_ROOT.clone();
+        let http_client = Client::new();
+
+        debug!("Using {} as cache root", root.to_string_lossy());
+
+        create_dir_all(&root).unwrap();
+        Self { root, http_client }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,7 +255,7 @@ mod tests {
     #[tokio::test]
     async fn test_url_to_filename() {
         let cache_dir = tempdir().unwrap();
-        let cache = Cache::new(cache_dir.path().to_owned(), reqwest::Client::new())
+        let cache = Cache::new(cache_dir.path().to_owned(), Client::new())
             .await
             .unwrap();
 
@@ -178,7 +285,7 @@ mod tests {
     async fn test_get_cached_path_local_file() {
         // Setup cache.
         let cache_dir = tempdir().unwrap();
-        let cache = Cache::new(cache_dir.path().to_owned(), reqwest::Client::new())
+        let cache = Cache::new(cache_dir.path().to_owned(), Client::new())
             .await
             .unwrap();
 
@@ -190,7 +297,7 @@ mod tests {
     async fn test_get_cached_path_non_existant_local_file_fails() {
         // Setup cache.
         let cache_dir = tempdir().unwrap();
-        let cache = Cache::new(cache_dir.path().to_owned(), reqwest::Client::new())
+        let cache = Cache::new(cache_dir.path().to_owned(), Client::new())
             .await
             .unwrap();
 
@@ -206,7 +313,7 @@ mod tests {
 
         // Setup cache.
         let cache_dir = tempdir().unwrap();
-        let cache = Cache::new(cache_dir.path().to_owned(), reqwest::Client::new())
+        let cache = Cache::new(cache_dir.path().to_owned(), Client::new())
             .await
             .unwrap();
 
