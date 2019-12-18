@@ -72,7 +72,6 @@ pub use crate::meta::Meta;
 /// This also works for local files, in which case the return value is just the original
 /// path.
 pub async fn cached_path(resource: &str) -> Result<PathBuf, Error> {
-    let root = DEFAULT_CACHE_ROOT.clone();
-    let cache = Cache::new(root, reqwest::Client::new()).await?;
+    let cache = Cache::new().await?;
     Ok(cache.cached_path(resource).await?)
 }
