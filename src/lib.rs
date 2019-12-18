@@ -2,10 +2,8 @@
 //! accessing both local and remote files. This can be used behind other APIs that need
 //! to access files agnostic to where they are located.
 //!
-//! For remote resources, [`cached_path`](fn.cached_path.html) downloads and caches the latest version of the resource.
-//! Each time [`cached_path`](fn.cached_path.html) is called for a remote file, the ETAG is checked against the cached
-//! version and if it's out of date the file will be downloaded again. The path returned is the
-//! path to the cached file:
+//! For remote resources `cached-path` uses the ETAG to know when to update the cache.
+//! The path returned is the local path to the latest cached version:
 //!
 //! ```rust
 //! use cached_path::cached_path;
@@ -32,22 +30,26 @@
 //! ```
 //!
 //! When you need more control over the cache location or the HTTP client used to download files,
-//! you can create a instance of the [`Cache`](struct.Cache.html) struct and then use
-//! the method [`.cached_path`](struct.Cache.html#method.cached_path):
+//! you can build a [`Cache`](struct.Cache.html) object and then use
+//! the method [`Cache::cached_path`](struct.Cache.html#method.cached_path):
 //!
 //! ```rust
 //! use cached_path::Cache;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), cached_path::Error> {
-//! let cache = Cache::new(
-//!     std::env::temp_dir().join("my-cache/"),
-//!     reqwest::Client::new(),
-//! ).await?;
+//! let cache = Cache::builder()
+//!     .root(std::env::temp_dir().join("my-cache/"))
+//!     .connect_timeout(std::time::Duration::from_secs(3))
+//!     .build()
+//!     .await?;
 //! let path = cache.cached_path("README.md").await?;
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! This is the recommended way to use `cached-path` when you're going to be calling it more than
+//! once.
 
 use std::path::PathBuf;
 
