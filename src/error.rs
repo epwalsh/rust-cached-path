@@ -56,6 +56,19 @@ impl Error {
     pub fn kind(&self) -> ErrorKind {
         self.inner.get_context().clone()
     }
+
+    pub(crate) fn is_retriable(&self) -> bool {
+        match self.inner.get_context() {
+            ErrorKind::HttpTimeoutError => true,
+            ErrorKind::HttpStatusError(status_code) => match status_code {
+                502 => true,
+                503 => true,
+                504 => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
 }
 
 impl From<tokio::io::Error> for Error {

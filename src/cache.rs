@@ -1,16 +1,17 @@
 use std::default::Default;
 use std::env;
-use std::fs::create_dir_all;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use failure::ResultExt;
-use log::{debug, info};
+use log::{debug, error, info, warn};
+use rand::distributions::{Distribution, Uniform};
 use reqwest::header::ETAG;
 use reqwest::{Client, ClientBuilder};
 use tempfile::NamedTempFile;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{self, AsyncWriteExt};
+use tokio::time::{self, delay_for};
 
 use crate::utils::hash_str;
 use crate::{Error, ErrorKind, Meta};
@@ -38,6 +39,8 @@ pub struct CacheBuilder {
 struct Config {
     root: Option<PathBuf>,
     client_builder: ClientBuilder,
+    max_retries: u32,
+    max_backoff: u32,
 }
 
 impl CacheBuilder {
@@ -47,6 +50,8 @@ impl CacheBuilder {
             config: Config {
                 root: None,
                 client_builder: ClientBuilder::new(),
+                max_retries: 3,
+                max_backoff: 5000,
             },
         }
     }
@@ -80,6 +85,18 @@ impl CacheBuilder {
         self
     }
 
+    /// Set maximum number of retries for HTTP requests.
+    pub fn max_retries(mut self, max_retries: u32) -> CacheBuilder {
+        self.config.max_retries = max_retries;
+        self
+    }
+
+    /// Set the maximum backoff delay in milliseconds for retrying HTTP requests.
+    pub fn max_backoff(mut self, max_backoff: u32) -> CacheBuilder {
+        self.config.max_backoff = max_backoff;
+        self
+    }
+
     /// Build the `Cache` object.
     pub async fn build(self) -> Result<Cache, Error> {
         let root = self
@@ -87,7 +104,15 @@ impl CacheBuilder {
             .root
             .unwrap_or_else(|| DEFAULT_CACHE_ROOT.clone());
         let http_client = self.config.client_builder.build()?;
-        Cache::new(root, http_client).await
+
+        fs::create_dir_all(&root).await?;
+
+        Ok(Cache {
+            root,
+            http_client,
+            max_retries: self.config.max_retries,
+            max_backoff: self.config.max_backoff,
+        })
     }
 }
 
@@ -107,14 +132,14 @@ impl Default for CacheBuilder {
 pub struct Cache {
     root: PathBuf,
     http_client: Client,
+    max_retries: u32,
+    max_backoff: u32,
 }
 
 impl Cache {
     /// Create a new `Cache` instance.
-    pub async fn new(root: PathBuf, http_client: Client) -> Result<Self, Error> {
-        debug!("Using {} as cache root", root.to_string_lossy());
-        fs::create_dir_all(&root).await?;
-        Ok(Cache { root, http_client })
+    pub async fn new() -> Result<Self, Error> {
+        Cache::builder().build().await
     }
 
     /// Create a `CacheBuilder`.
@@ -125,8 +150,7 @@ impl Cache {
     /// Works just like [`cached_path`](fn.cached_path.html).
     pub async fn cached_path(&self, resource: &str) -> Result<PathBuf, Error> {
         if !resource.starts_with("http") {
-            info!("Treating resource as local file");
-
+            info!("Treating {} as local file", resource);
             let path = PathBuf::from(resource);
             if !path.is_file() {
                 return Err(ErrorKind::ResourceNotFound(String::from(resource)).into());
@@ -137,21 +161,66 @@ impl Cache {
 
         let url = reqwest::Url::parse(resource)
             .map_err(|_| ErrorKind::InvalidUrl(String::from(resource)))?;
-        let etag = self.get_etag(&url).await?;
-        let path = self.url_to_filepath(&url, &etag);
 
-        // If resource + meta data already exist and meta data matches, no need to download again.
+        let etag: Option<String>;
+        let mut retries: u32 = 0;
+        loop {
+            match self.get_etag(&url).await {
+                Ok(result) => {
+                    etag = result;
+                    break;
+                }
+                Err(err) => {
+                    if retries >= self.max_retries {
+                        error!("Max retries exceeded for {}", resource);
+                        return Err(err);
+                    }
+                    if !err.is_retriable() {
+                        error!("ETAG fetch for {} failed with fatal error", resource);
+                        return Err(err);
+                    }
+                    retries += 1;
+                    let retry_delay = self.get_retry_delay(retries);
+                    warn!(
+                        "ETAG fetch failed for {}, retrying in {} milliseconds...",
+                        resource, retry_delay
+                    );
+                    delay_for(time::Duration::from_millis(u64::from(retry_delay))).await;
+                }
+            }
+        }
+
+        let path = self.url_to_filepath(&url, &etag);
         if path.exists() {
-            debug!("Cached version is up-to-date");
+            info!("Cached version is up-to-date");
             return Ok(path);
         }
 
-        info!("Downloading updated version of resource");
+        let mut retries: u32 = 0;
+        loop {
+            match self.download_resource(&url, &path).await {
+                Ok(_) => break,
+                Err(err) => {
+                    if retries >= self.max_retries {
+                        error!("Max retries exceeded for {}", resource);
+                        return Err(err);
+                    }
+                    if !err.is_retriable() {
+                        error!("Download failed for {} with fatal error", resource);
+                        return Err(err);
+                    }
+                    retries += 1;
+                    let retry_delay = self.get_retry_delay(retries);
+                    warn!(
+                        "Download failed for {}, retrying in {} milliseconds...",
+                        resource, retry_delay
+                    );
+                    delay_for(time::Duration::from_millis(u64::from(retry_delay))).await;
+                }
+            }
+        }
 
-        self.download_resource(&url, &path).await?;
-
-        debug!("Writing meta data to file");
-
+        debug!("Writing meta data to file for {}", resource);
         let meta = Meta {
             resource: String::from(resource),
             etag,
@@ -161,7 +230,18 @@ impl Cache {
         Ok(path)
     }
 
+    fn get_retry_delay(&self, retries: u32) -> u32 {
+        let between = Uniform::from(0..1000);
+        let mut rng = rand::thread_rng();
+        std::cmp::min(
+            2u32.pow(retries - 1) * 1000 + between.sample(&mut rng),
+            self.max_backoff,
+        )
+    }
+
     async fn download_resource(&self, url: &reqwest::Url, path: &PathBuf) -> Result<(), Error> {
+        debug!("Attempting connection to {}", url);
+
         let mut response = self
             .http_client
             .get(url.clone())
@@ -169,7 +249,7 @@ impl Cache {
             .await?
             .error_for_status()?;
 
-        debug!("Opened connection to resource");
+        debug!("Opened connection to {}", url);
 
         // First we make a temporary file and downlaod the contents of the resource into it.
         // Otherwise, if we wrote directly to the cache file and the download got
@@ -178,20 +258,20 @@ impl Cache {
         let mut tempfile_write_handle =
             OpenOptions::new().write(true).open(tempfile.path()).await?;
 
-        debug!("Starting download");
+        debug!("Starting download of {}", url);
 
         while let Some(chunk) = response.chunk().await? {
             tempfile_write_handle.write_all(&chunk[..]).await?;
         }
 
-        debug!("Download complete");
+        debug!("Download complete for {}", url);
 
         // Resource successfully written to the tempfile, so we can copy the tempfile
         // over to the cache file.
         let mut tempfile_read_handle = OpenOptions::new().read(true).open(tempfile.path()).await?;
         let mut cache_file_write_handle = File::create(path).await?;
 
-        debug!("Copying resource temp file to cache location");
+        debug!("Copying resource temp file to cache location for {}", url);
 
         io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle).await?;
 
@@ -199,11 +279,15 @@ impl Cache {
     }
 
     async fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Error> {
+        debug!("Fetching ETAG for {}", url);
+
         let r = self.http_client.head(url.clone()).send().await?;
+
         if let Some(etag) = r.headers().get(ETAG) {
             if let Ok(s) = etag.to_str() {
                 Ok(Some(s.into()))
             } else {
+                debug!("No ETAG for {}", url);
                 Ok(None)
             }
         } else {
@@ -229,18 +313,6 @@ impl Cache {
     }
 }
 
-impl Default for Cache {
-    fn default() -> Self {
-        let root = DEFAULT_CACHE_ROOT.clone();
-        let http_client = Client::new();
-
-        debug!("Using {} as cache root", root.to_string_lossy());
-
-        create_dir_all(&root).unwrap();
-        Self { root, http_client }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,7 +327,9 @@ mod tests {
     #[tokio::test]
     async fn test_url_to_filename() {
         let cache_dir = tempdir().unwrap();
-        let cache = Cache::new(cache_dir.path().to_owned(), Client::new())
+        let cache = Cache::builder()
+            .root(cache_dir.path().to_owned())
+            .build()
             .await
             .unwrap();
 
@@ -285,7 +359,9 @@ mod tests {
     async fn test_get_cached_path_local_file() {
         // Setup cache.
         let cache_dir = tempdir().unwrap();
-        let cache = Cache::new(cache_dir.path().to_owned(), Client::new())
+        let cache = Cache::builder()
+            .root(cache_dir.path().to_owned())
+            .build()
             .await
             .unwrap();
 
@@ -297,7 +373,9 @@ mod tests {
     async fn test_get_cached_path_non_existant_local_file_fails() {
         // Setup cache.
         let cache_dir = tempdir().unwrap();
-        let cache = Cache::new(cache_dir.path().to_owned(), Client::new())
+        let cache = Cache::builder()
+            .root(cache_dir.path().to_owned())
+            .build()
             .await
             .unwrap();
 
@@ -313,7 +391,9 @@ mod tests {
 
         // Setup cache.
         let cache_dir = tempdir().unwrap();
-        let cache = Cache::new(cache_dir.path().to_owned(), Client::new())
+        let cache = Cache::builder()
+            .root(cache_dir.path().to_owned())
+            .build()
             .await
             .unwrap();
 
