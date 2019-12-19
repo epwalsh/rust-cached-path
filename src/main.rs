@@ -7,11 +7,11 @@ use log::debug;
 use structopt::StructOpt;
 use tokio::sync::mpsc::channel;
 
-use cached_path::Cache;
+use cached_path::{Cache, Error};
 
 #[derive(Debug, StructOpt)]
 #[structopt(
-    name = "cached_path",
+    name = "cached-path",
     about = "Get the cached path to a resource.",
     setting = structopt::clap::AppSettings::ColoredHelp,
 )]
@@ -32,6 +32,15 @@ struct Opt {
     #[structopt(long = "connect-timeout")]
     /// Set a timeout for the connect phase of the HTTP client.
     connect_timeout: Option<u64>,
+
+    #[structopt(long = "max-retries", default_value = "3")]
+    /// Set the maximum number of times to retry an HTTP request. Retriable failures are tried
+    /// again with exponential backoff.
+    max_retries: u32,
+
+    #[structopt(long = "max-backoff", default_value = "5000")]
+    /// Set the maximum backoff delay in milliseconds for retrying HTTP requests.
+    max_backoff: u32,
 }
 
 #[tokio::main]
@@ -41,18 +50,7 @@ async fn main() -> Result<(), ExitFailure> {
 
     debug!("{:?}", opt);
 
-    let mut cache_builder = Cache::builder();
-    if let Some(root) = opt.root {
-        cache_builder = cache_builder.root(root);
-    }
-    if let Some(timeout) = opt.timeout {
-        cache_builder = cache_builder.timeout(Duration::from_secs(timeout));
-    }
-    if let Some(connect_timeout) = opt.connect_timeout {
-        cache_builder = cache_builder.connect_timeout(Duration::from_secs(connect_timeout));
-    }
-
-    let cache = cache_builder.build().await?;
+    let cache = build_cache_from_opt(&opt).await?;
 
     let (tx, mut rx) = channel(100);
 
@@ -83,4 +81,20 @@ async fn main() -> Result<(), ExitFailure> {
     }
 
     Ok(())
+}
+
+async fn build_cache_from_opt(opt: &Opt) -> Result<Cache, Error> {
+    let mut cache_builder = Cache::builder();
+    if let Some(root) = &opt.root {
+        cache_builder = cache_builder.root(root.clone());
+    }
+    if let Some(timeout) = opt.timeout {
+        cache_builder = cache_builder.timeout(Duration::from_secs(timeout));
+    }
+    if let Some(connect_timeout) = opt.connect_timeout {
+        cache_builder = cache_builder.connect_timeout(Duration::from_secs(connect_timeout));
+    }
+    cache_builder = cache_builder.max_retries(opt.max_retries);
+    cache_builder = cache_builder.max_backoff(opt.max_backoff);
+    cache_builder.build().await
 }

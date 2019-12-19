@@ -16,7 +16,7 @@ name = "cached_path"
 path = "src/lib.rs" 
 
 [[bin]]
-name = "cached_path"
+name = "cached-path"
 path = "src/main.rs"
 
 [dependencies]
