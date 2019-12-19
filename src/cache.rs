@@ -139,7 +139,7 @@ impl Default for CacheBuilder {
 /// is the recommended way to do it.
 #[derive(Debug, Clone)]
 pub struct Cache {
-    root: PathBuf,
+    pub root: PathBuf,
     http_client: Client,
     max_retries: u32,
     max_backoff: u32,
