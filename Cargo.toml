@@ -18,6 +18,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "cached-path"
 path = "src/main.rs"
+doc = false
 
 [dependencies]
 reqwest = { git = "https://github.com/seanmonstar/reqwest" }
