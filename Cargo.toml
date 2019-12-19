@@ -21,13 +21,13 @@ path = "src/main.rs"
 
 [dependencies]
 reqwest = { git = "https://github.com/seanmonstar/reqwest" }
-rust-crypto = "^0.2"
-tempfile = "^3.1"
-structopt = "^0.3"
-log = "^0.4"
-env_logger = "^0.7"
+rust-crypto = "0.2"
+tempfile = "3.1"
+structopt = "0.3"
+log = "0.4"
+env_logger = "0.7"
 tokio = { version = "0.2", features = ["macros", "io-util", "fs", "sync", "time"] }
-serde = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 lazy_static = "1.4"
 failure = "0.1"
@@ -36,4 +36,4 @@ exitfailure = "0.5.1"
 rand = "0.7"
 
 [dev-dependencies]
-httpmock = "^0.3"
+httpmock = "0.3"
