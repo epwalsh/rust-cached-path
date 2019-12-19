@@ -82,7 +82,7 @@ impl Meta {
     }
 
     /// Read `Meta` from a path.
-    pub async fn from_path(path: &Path) -> Result<Self, Error> {
+    pub(crate) async fn from_path(path: &Path) -> Result<Self, Error> {
         let serialized = fs::read_to_string(path).await?;
         let meta: Meta = serde_json::from_str(&serialized[..]).unwrap();
         Ok(meta)

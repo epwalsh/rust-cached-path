@@ -41,6 +41,10 @@ struct Opt {
     #[structopt(long = "max-backoff", default_value = "5000")]
     /// Set the maximum backoff delay in milliseconds for retrying HTTP requests.
     max_backoff: u32,
+
+    #[structopt(long = "freshness-lifetime")]
+    /// Set the a default freshness lifetime (in seconds) for cached resources.
+    freshness_lifetime: Option<f64>,
 }
 
 #[tokio::main]
@@ -93,6 +97,9 @@ async fn build_cache_from_opt(opt: &Opt) -> Result<Cache, Error> {
     }
     if let Some(connect_timeout) = opt.connect_timeout {
         cache_builder = cache_builder.connect_timeout(Duration::from_secs(connect_timeout));
+    }
+    if let Some(freshness_lifetime) = opt.freshness_lifetime {
+        cache_builder = cache_builder.freshness_lifetime(freshness_lifetime);
     }
     cache_builder = cache_builder.max_retries(opt.max_retries);
     cache_builder = cache_builder.max_backoff(opt.max_backoff);
