@@ -1,9 +1,10 @@
 use std::default::Default;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use failure::ResultExt;
+use glob::glob;
 use log::{debug, error, info, warn};
 use rand::distributions::{Distribution, Uniform};
 use reqwest::header::ETAG;
@@ -41,6 +42,7 @@ struct Config {
     client_builder: ClientBuilder,
     max_retries: u32,
     max_backoff: u32,
+    freshness_lifetime: Option<u64>,
 }
 
 impl CacheBuilder {
@@ -52,6 +54,7 @@ impl CacheBuilder {
                 client_builder: ClientBuilder::new(),
                 max_retries: 3,
                 max_backoff: 5000,
+                freshness_lifetime: None,
             },
         }
     }
@@ -97,6 +100,13 @@ impl CacheBuilder {
         self
     }
 
+    /// Set the default freshness lifetime, in seconds. The default is None, meaning
+    /// the ETAG for an external resource will always be checked for a fresher value.
+    pub fn freshness_lifetime(mut self, freshness_lifetime: u64) -> CacheBuilder {
+        self.config.freshness_lifetime = Some(freshness_lifetime);
+        self
+    }
+
     /// Build the `Cache` object.
     pub async fn build(self) -> Result<Cache, Error> {
         let root = self
@@ -104,14 +114,13 @@ impl CacheBuilder {
             .root
             .unwrap_or_else(|| DEFAULT_CACHE_ROOT.clone());
         let http_client = self.config.client_builder.build()?;
-
         fs::create_dir_all(&root).await?;
-
         Ok(Cache {
             root,
             http_client,
             max_retries: self.config.max_retries,
             max_backoff: self.config.max_backoff,
+            freshness_lifetime: self.config.freshness_lifetime,
         })
     }
 }
@@ -130,10 +139,11 @@ impl Default for CacheBuilder {
 /// is the recommended way to do it.
 #[derive(Debug, Clone)]
 pub struct Cache {
-    root: PathBuf,
+    pub root: PathBuf,
     http_client: Client,
     max_retries: u32,
     max_backoff: u32,
+    freshness_lifetime: Option<u64>,
 }
 
 impl Cache {
@@ -162,6 +172,22 @@ impl Cache {
         let url = reqwest::Url::parse(resource)
             .map_err(|_| ErrorKind::InvalidUrl(String::from(resource)))?;
 
+        // Find any existing cached versions of resource and check if they are still
+        // fresh. Clean up any that aren't fresh, and if we find any that are fresh,
+        // return the freshest.
+        let versions = self.find_existing(resource).await;
+        if !versions.is_empty() {
+            debug!("Found {} existing versions of {}", versions.len(), resource);
+            if versions[0].is_fresh() {
+                debug!("Latest existing version of {} is still fresh", resource);
+                Cache::clean_up(&versions, Some(&versions[0].resource_path)).await;
+                return Ok(versions[0].resource_path.clone());
+            }
+        } else {
+            debug!("No existing versions found for {}", resource);
+        }
+
+        // Fetch ETAG for resource.
         let etag: Option<String>;
         let mut retries: u32 = 0;
         loop {
@@ -190,12 +216,16 @@ impl Cache {
             }
         }
 
-        let path = self.url_to_filepath(&url, &etag);
+        let path = self.resource_to_filepath(resource, &etag);
         if path.exists() {
             info!("Cached version is up-to-date");
+            Cache::clean_up(&versions, Some(&path)).await;
             return Ok(path);
         }
 
+        Cache::clean_up(&versions, None).await;
+
+        // Download resource and save to cache.
         let mut retries: u32 = 0;
         loop {
             match self.download_resource(&url, &path).await {
@@ -221,13 +251,48 @@ impl Cache {
         }
 
         debug!("Writing meta data to file for {}", resource);
-        let meta = Meta {
-            resource: String::from(resource),
+        let meta = Meta::new(
+            String::from(resource),
+            path.clone(),
             etag,
-        };
-        meta.to_file(&path).await?;
+            self.freshness_lifetime,
+        );
+        meta.to_file().await?;
 
         Ok(path)
+    }
+
+    /// Find existing versions of a cached resource, sorted by most recent first.
+    async fn find_existing(&self, resource: &str) -> Vec<Meta> {
+        let mut existing_meta: Vec<Meta> = vec![];
+        let glob_string = format!(
+            "{}.*.meta",
+            self.resource_to_filepath(resource, &None).to_str().unwrap(),
+        );
+        for meta_path in glob(&glob_string).unwrap().filter_map(Result::ok) {
+            if let Ok(meta) = Meta::from_path(&meta_path).await {
+                existing_meta.push(meta);
+            }
+        }
+        existing_meta
+            .sort_unstable_by(|a, b| b.creation_time.partial_cmp(&a.creation_time).unwrap());
+        existing_meta
+    }
+
+    async fn clean_up(versions: &[Meta], keep: Option<&Path>) {
+        for meta in versions {
+            if let Some(path) = keep {
+                if path == meta.resource_path {
+                    continue;
+                }
+            }
+            debug!(
+                "Removing old version at {}",
+                meta.resource_path.to_str().unwrap()
+            );
+            fs::remove_file(&meta.meta_path).await.ok();
+            fs::remove_file(&meta.resource_path).await.ok();
+        }
     }
 
     fn get_retry_delay(&self, retries: u32) -> u32 {
@@ -295,16 +360,15 @@ impl Cache {
         }
     }
 
-    fn url_to_filepath(&self, url: &reqwest::Url, etag: &Option<String>) -> PathBuf {
-        let url_string = url.clone().into_string();
-        let url_hash = hash_str(&url_string[..]);
+    fn resource_to_filepath(&self, resource: &str, etag: &Option<String>) -> PathBuf {
+        let resource_hash = hash_str(resource);
         let filename: String;
 
         if let Some(tag) = etag {
             let etag_hash = hash_str(&tag[..]);
-            filename = format!("{}.{}", url_hash, etag_hash);
+            filename = format!("{}.{}", resource_hash, etag_hash);
         } else {
-            filename = url_hash;
+            filename = resource_hash;
         }
 
         let filepath = PathBuf::from(filename);
@@ -316,7 +380,6 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::meta_path;
     use httpmock::Method::{GET, HEAD};
     use httpmock::{mock, with_mock_server};
     use std::path::Path;
@@ -333,11 +396,14 @@ mod tests {
             .await
             .unwrap();
 
-        let url = reqwest::Url::parse("http://localhost:5000/foo.txt").unwrap();
+        let resource = "http://localhost:5000/foo.txt";
         let etag = String::from("abcd");
 
         assert_eq!(
-            cache.url_to_filepath(&url, &Some(etag)).to_str().unwrap(),
+            cache
+                .resource_to_filepath(resource, &Some(etag))
+                .to_str()
+                .unwrap(),
             format!(
                 "{}/{}.{}",
                 cache_dir.path().to_str().unwrap(),
@@ -346,7 +412,10 @@ mod tests {
             )
         );
         assert_eq!(
-            cache.url_to_filepath(&url, &None).to_str().unwrap(),
+            cache
+                .resource_to_filepath(resource, &None)
+                .to_str()
+                .unwrap(),
             format!(
                 "{}/{}",
                 cache_dir.path().to_str().unwrap(),
@@ -385,7 +454,7 @@ mod tests {
 
     #[tokio::test]
     #[with_mock_server]
-    async fn test_download_resource() {
+    async fn test_cached_path() {
         // For debugging:
         // let _ = env_logger::try_init();
 
@@ -393,6 +462,7 @@ mod tests {
         let cache_dir = tempdir().unwrap();
         let cache = Cache::builder()
             .root(cache_dir.path().to_owned())
+            .freshness_lifetime(300)
             .build()
             .await
             .unwrap();
@@ -417,11 +487,33 @@ mod tests {
 
         // Ensure the file and meta exist.
         assert!(path.is_file());
-        assert!(meta_path(&path).is_file());
+        assert!(Meta::meta_path(&path).is_file());
 
         // Ensure the contents of the file are correct.
         let contents = std::fs::read_to_string(&path).unwrap();
         assert_eq!(&contents[..], "Hello, World!");
+
+        // When we attempt to get the resource again, the cache should still be fresh.
+        let mut meta = Meta::from_cache(&path).await.unwrap();
+        assert!(meta.is_fresh());
+        cache.cached_path(&resource[..]).await.unwrap();
+        assert!(path.is_file());
+        assert!(Meta::meta_path(&path).is_file());
+        assert_eq!(mock_1.times_called(), 1);
+        assert_eq!(mock_1_header.times_called(), 1);
+
+        // Now expire the resource to continue testing.
+        meta.expires = None;
+        meta.to_file().await.unwrap();
+
+        // After calling again when the resource is no longer fresh, the ETAG
+        // should have been queried again, but the resource should not have been
+        // downloaded again.
+        cache.cached_path(&resource[..]).await.unwrap();
+        assert!(path.is_file());
+        assert!(Meta::meta_path(&path).is_file());
+        assert_eq!(mock_1.times_called(), 1);
+        assert_eq!(mock_1_header.times_called(), 2);
 
         // Now update the resource.
         mock_1.delete();
@@ -446,7 +538,11 @@ mod tests {
 
         // Ensure the file and meta exist.
         assert!(new_path.is_file());
-        assert!(meta_path(&new_path).is_file());
+        assert!(Meta::meta_path(&new_path).is_file());
+
+        // Ensure the old version was cleaned up.
+        assert!(!path.is_file());
+        assert!(!Meta::meta_path(&path).is_file());
 
         // Ensure the contents of the file are correct.
         let new_contents = std::fs::read_to_string(&new_path).unwrap();
