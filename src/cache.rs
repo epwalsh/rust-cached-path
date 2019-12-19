@@ -42,7 +42,7 @@ struct Config {
     client_builder: ClientBuilder,
     max_retries: u32,
     max_backoff: u32,
-    freshness_lifetime: Option<f64>,
+    freshness_lifetime: Option<u64>,
 }
 
 impl CacheBuilder {
@@ -102,7 +102,7 @@ impl CacheBuilder {
 
     /// Set the default freshness lifetime, in seconds. The default is None, meaning
     /// the ETAG for an external resource will always be checked for a fresher value.
-    pub fn freshness_lifetime(mut self, freshness_lifetime: f64) -> CacheBuilder {
+    pub fn freshness_lifetime(mut self, freshness_lifetime: u64) -> CacheBuilder {
         self.config.freshness_lifetime = Some(freshness_lifetime);
         self
     }
@@ -143,7 +143,7 @@ pub struct Cache {
     http_client: Client,
     max_retries: u32,
     max_backoff: u32,
-    freshness_lifetime: Option<f64>,
+    freshness_lifetime: Option<u64>,
 }
 
 impl Cache {
@@ -462,7 +462,7 @@ mod tests {
         let cache_dir = tempdir().unwrap();
         let cache = Cache::builder()
             .root(cache_dir.path().to_owned())
-            .freshness_lifetime(300.0)
+            .freshness_lifetime(300)
             .build()
             .await
             .unwrap();

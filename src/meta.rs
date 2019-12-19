@@ -28,12 +28,12 @@ impl Meta {
         resource: String,
         resource_path: PathBuf,
         etag: Option<String>,
-        freshness_lifetime: Option<f64>,
+        freshness_lifetime: Option<u64>,
     ) -> Meta {
         let mut expires: Option<f64> = None;
         let creation_time = now();
         if let Some(lifetime) = freshness_lifetime {
-            expires = Some(creation_time + lifetime);
+            expires = Some(creation_time + (lifetime as f64));
         }
         let meta_path = Meta::meta_path(&resource_path);
         Meta {

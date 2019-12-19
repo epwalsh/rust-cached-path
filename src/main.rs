@@ -44,7 +44,7 @@ struct Opt {
 
     #[structopt(long = "freshness-lifetime")]
     /// Set the a default freshness lifetime (in seconds) for cached resources.
-    freshness_lifetime: Option<f64>,
+    freshness_lifetime: Option<u64>,
 }
 
 #[tokio::main]
