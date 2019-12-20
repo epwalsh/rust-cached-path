@@ -39,6 +39,10 @@ all-checks : lint test doc
 publish :
 	cargo publish
 
+.PHONY : readme
+readme :
+	cargo readme > README.md
+
 #
 # Git helpers.
 #
