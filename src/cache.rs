@@ -179,11 +179,11 @@ impl Cache {
         // fresh according to the `freshness_lifetime` setting.
         let versions = self.find_existing(resource).await; // already sorted, latest is first.
         if !versions.is_empty() {
-            debug!("Found {} existing versions of {}", versions.len(), resource);
+            debug!("Found {} cached versions of {}", versions.len(), resource);
             if versions[0].is_fresh() {
                 // Oh hey, the latest version is still fresh! We can clean up any
                 // older versions and return the latest.
-                info!("Latest existing version of {} is still fresh", resource);
+                info!("Latest cached version of {} is still fresh", resource);
                 Cache::clean_up(&versions, Some(&versions[0].resource_path)).await;
                 return Ok(versions[0].resource_path.clone());
             } else {
@@ -202,7 +202,7 @@ impl Cache {
                 }
             }
         } else {
-            debug!("No existing versions found for {}", resource);
+            debug!("No cached versions found for {}", resource);
         }
 
         // No up-to-date version cached, so we have to try downloading it.
