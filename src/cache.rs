@@ -159,6 +159,8 @@ impl Cache {
 
     /// Works just like [`cached_path`](fn.cached_path.html).
     pub async fn cached_path(&self, resource: &str) -> Result<PathBuf, Error> {
+        // If resource doesn't look like a URL, treat as local path, but return
+        // an error if the path doesn't exist.
         if !resource.starts_with("http") {
             info!("Treating {} as local file", resource);
             let path = PathBuf::from(resource);
@@ -169,97 +171,46 @@ impl Cache {
             }
         }
 
+        // Otherwise we attempt to parse the URL.
         let url = reqwest::Url::parse(resource)
             .map_err(|_| ErrorKind::InvalidUrl(String::from(resource)))?;
 
         // Find any existing cached versions of resource and check if they are still
-        // fresh. Clean up any that aren't fresh, and if we find any that are fresh,
-        // return the freshest.
-        let versions = self.find_existing(resource).await;
+        // fresh according to the `freshness_lifetime` setting.
+        let versions = self.find_existing(resource).await; // already sorted, latest is first.
         if !versions.is_empty() {
             debug!("Found {} existing versions of {}", versions.len(), resource);
             if versions[0].is_fresh() {
+                // Oh hey, the latest version is still fresh! We can clean up any
+                // older versions and return the latest.
                 debug!("Latest existing version of {} is still fresh", resource);
                 Cache::clean_up(&versions, Some(&versions[0].resource_path)).await;
                 return Ok(versions[0].resource_path.clone());
+            } else {
+                // Existing versions are older than their freshness lifetimes, so we'll
+                // query for the ETAG of the resource and then compare that with existing
+                // versions.
+                let etag = self.try_get_etag(resource, &url).await?;
+                let path = self.resource_to_filepath(resource, &etag);
+                if path.exists() {
+                    // Oh cool! The cache is up-to-date according to the ETAG.
+                    // We'll return the up-to-date version and clean up any other
+                    // dangling ones.
+                    info!("Cached version is up-to-date");
+                    Cache::clean_up(&versions, Some(&path)).await;
+                    return Ok(path);
+                }
             }
         } else {
             debug!("No existing versions found for {}", resource);
         }
 
-        // Fetch ETAG for resource.
-        let etag: Option<String>;
-        let mut retries: u32 = 0;
-        loop {
-            match self.get_etag(&url).await {
-                Ok(result) => {
-                    etag = result;
-                    break;
-                }
-                Err(err) => {
-                    if retries >= self.max_retries {
-                        error!("Max retries exceeded for {}", resource);
-                        return Err(err);
-                    }
-                    if !err.is_retriable() {
-                        error!("ETAG fetch for {} failed with fatal error", resource);
-                        return Err(err);
-                    }
-                    retries += 1;
-                    let retry_delay = self.get_retry_delay(retries);
-                    warn!(
-                        "ETAG fetch failed for {}, retrying in {} milliseconds...",
-                        resource, retry_delay
-                    );
-                    delay_for(time::Duration::from_millis(u64::from(retry_delay))).await;
-                }
-            }
-        }
-
-        let path = self.resource_to_filepath(resource, &etag);
-        if path.exists() {
-            info!("Cached version is up-to-date");
-            Cache::clean_up(&versions, Some(&path)).await;
-            return Ok(path);
-        }
-
-        Cache::clean_up(&versions, None).await;
-
-        // Download resource and save to cache.
-        let mut retries: u32 = 0;
-        loop {
-            match self.download_resource(&url, &path).await {
-                Ok(_) => break,
-                Err(err) => {
-                    if retries >= self.max_retries {
-                        error!("Max retries exceeded for {}", resource);
-                        return Err(err);
-                    }
-                    if !err.is_retriable() {
-                        error!("Download failed for {} with fatal error", resource);
-                        return Err(err);
-                    }
-                    retries += 1;
-                    let retry_delay = self.get_retry_delay(retries);
-                    warn!(
-                        "Download failed for {}, retrying in {} milliseconds...",
-                        resource, retry_delay
-                    );
-                    delay_for(time::Duration::from_millis(u64::from(retry_delay))).await;
-                }
-            }
-        }
-
+        // No up-to-date version cached, so we have to try downloading it.
+        let meta = self.try_download_resource(resource, &url).await?;
         debug!("Writing meta data to file for {}", resource);
-        let meta = Meta::new(
-            String::from(resource),
-            path.clone(),
-            etag,
-            self.freshness_lifetime,
-        );
         meta.to_file().await?;
-
-        Ok(path)
+        Cache::clean_up(&versions, Some(&meta.resource_path)).await;
+        Ok(meta.resource_path)
     }
 
     /// Find existing versions of a cached resource, sorted by most recent first.
@@ -304,7 +255,39 @@ impl Cache {
         )
     }
 
-    async fn download_resource(&self, url: &reqwest::Url, path: &PathBuf) -> Result<(), Error> {
+    async fn try_download_resource(
+        &self,
+        resource: &str,
+        url: &reqwest::Url,
+    ) -> Result<Meta, Error> {
+        let mut retries: u32 = 0;
+        loop {
+            match self.download_resource(resource, &url).await {
+                Ok(meta) => {
+                    return Ok(meta);
+                }
+                Err(err) => {
+                    if retries >= self.max_retries {
+                        error!("Max retries exceeded for {}", resource);
+                        return Err(err);
+                    }
+                    if !err.is_retriable() {
+                        error!("Download failed for {} with fatal error", resource);
+                        return Err(err);
+                    }
+                    retries += 1;
+                    let retry_delay = self.get_retry_delay(retries);
+                    warn!(
+                        "Download failed for {}, retrying in {} milliseconds...",
+                        resource, retry_delay
+                    );
+                    delay_for(time::Duration::from_millis(u64::from(retry_delay))).await;
+                }
+            }
+        }
+    }
+
+    async fn download_resource(&self, resource: &str, url: &reqwest::Url) -> Result<Meta, Error> {
         debug!("Attempting connection to {}", url);
 
         let mut response = self
@@ -316,9 +299,20 @@ impl Cache {
 
         debug!("Opened connection to {}", url);
 
-        // First we make a temporary file and downlaod the contents of the resource into it.
-        // Otherwise, if we wrote directly to the cache file and the download got
-        // interrupted, we could be left with a corrupted cache file.
+        let mut etag: Option<String> = None;
+        if let Some(val) = response.headers().get(ETAG) {
+            if let Ok(s) = val.to_str() {
+                etag = Some(s.into());
+                debug!("Found new ETAG for {}", resource);
+            } else {
+                warn!("Error parsing ETAG for {}", resource);
+            }
+        }
+        let path = self.resource_to_filepath(resource, &etag);
+
+        // First we make a temporary file and download the contents of the resource into it.
+        // Otherwise if we wrote directly to the cache file and the download got
+        // interrupted we could be left with a corrupted cache file.
         let tempfile = NamedTempFile::new().context(ErrorKind::IoError(None))?;
         let mut tempfile_write_handle =
             OpenOptions::new().write(true).open(tempfile.path()).await?;
@@ -334,21 +328,56 @@ impl Cache {
         // Resource successfully written to the tempfile, so we can copy the tempfile
         // over to the cache file.
         let mut tempfile_read_handle = OpenOptions::new().read(true).open(tempfile.path()).await?;
-        let mut cache_file_write_handle = File::create(path).await?;
+        let mut cache_file_write_handle = File::create(&path).await?;
 
         debug!("Copying resource temp file to cache location for {}", url);
 
         io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle).await?;
 
-        Ok(())
+        let meta = Meta::new(String::from(resource), path, etag, self.freshness_lifetime);
+
+        Ok(meta)
+    }
+
+    async fn try_get_etag(
+        &self,
+        resource: &str,
+        url: &reqwest::Url,
+    ) -> Result<Option<String>, Error> {
+        let mut retries: u32 = 0;
+        loop {
+            match self.get_etag(&url).await {
+                Ok(etag) => return Ok(etag),
+                Err(err) => {
+                    if retries >= self.max_retries {
+                        error!("Max retries exceeded for {}", resource);
+                        return Err(err);
+                    }
+                    if !err.is_retriable() {
+                        error!("ETAG fetch for {} failed with fatal error", resource);
+                        return Err(err);
+                    }
+                    retries += 1;
+                    let retry_delay = self.get_retry_delay(retries);
+                    warn!(
+                        "ETAG fetch failed for {}, retrying in {} milliseconds...",
+                        resource, retry_delay
+                    );
+                    delay_for(time::Duration::from_millis(u64::from(retry_delay))).await;
+                }
+            }
+        }
     }
 
     async fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Error> {
         debug!("Fetching ETAG for {}", url);
-
-        let r = self.http_client.head(url.clone()).send().await?;
-
-        if let Some(etag) = r.headers().get(ETAG) {
+        let response = self
+            .http_client
+            .head(url.clone())
+            .send()
+            .await?
+            .error_for_status()?;
+        if let Some(etag) = response.headers().get(ETAG) {
             if let Ok(s) = etag.to_str() {
                 Ok(Some(s.into()))
             } else {
@@ -470,20 +499,25 @@ mod tests {
         let resource = "http://localhost:5000/resource.txt";
 
         // Mock the resource.
-        let mut mock_1 = mock(GET, "/resource.txt")
-            .return_status(200)
-            .return_body("Hello, World!")
-            .create();
-        let mut mock_1_header = mock(HEAD, "/resource.txt")
+        let mut mock_1_head = mock(HEAD, "/resource.txt")
             .return_status(200)
             .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
+            .create();
+        let mut mock_1_get = mock(GET, "/resource.txt")
+            .return_status(200)
+            .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
+            .return_body("Hello, World!")
             .create();
 
         // Get the cached path.
         let path = cache.cached_path(&resource[..]).await.unwrap();
+        assert_eq!(
+            path,
+            cache.resource_to_filepath(&resource, &Some(String::from("fake-etag")))
+        );
 
-        assert_eq!(mock_1.times_called(), 1);
-        assert_eq!(mock_1_header.times_called(), 1);
+        assert_eq!(mock_1_head.times_called(), 0);
+        assert_eq!(mock_1_get.times_called(), 1);
 
         // Ensure the file and meta exist.
         assert!(path.is_file());
@@ -496,42 +530,51 @@ mod tests {
         // When we attempt to get the resource again, the cache should still be fresh.
         let mut meta = Meta::from_cache(&path).await.unwrap();
         assert!(meta.is_fresh());
-        cache.cached_path(&resource[..]).await.unwrap();
+        let same_path = cache.cached_path(&resource[..]).await.unwrap();
+        assert_eq!(same_path, path);
         assert!(path.is_file());
         assert!(Meta::meta_path(&path).is_file());
-        assert_eq!(mock_1.times_called(), 1);
-        assert_eq!(mock_1_header.times_called(), 1);
+
+        // Didn't have to call HEAD or GET again.
+        assert_eq!(mock_1_head.times_called(), 0);
+        assert_eq!(mock_1_get.times_called(), 1);
 
         // Now expire the resource to continue testing.
         meta.expires = None;
         meta.to_file().await.unwrap();
 
         // After calling again when the resource is no longer fresh, the ETAG
-        // should have been queried again, but the resource should not have been
-        // downloaded again.
-        cache.cached_path(&resource[..]).await.unwrap();
+        // should have been queried again with HEAD, but the resource should not have been
+        // downloaded again with GET.
+        let same_path = cache.cached_path(&resource[..]).await.unwrap();
+        assert_eq!(same_path, path);
         assert!(path.is_file());
         assert!(Meta::meta_path(&path).is_file());
-        assert_eq!(mock_1.times_called(), 1);
-        assert_eq!(mock_1_header.times_called(), 2);
+        assert_eq!(mock_1_head.times_called(), 1);
+        assert_eq!(mock_1_get.times_called(), 1);
 
         // Now update the resource.
-        mock_1.delete();
-        mock_1_header.delete();
-        let mock_2 = mock(GET, "/resource.txt")
-            .return_status(200)
-            .return_body("Well hello again")
-            .create();
-        let mock_2_header = mock(HEAD, "/resource.txt")
+        mock_1_head.delete();
+        mock_1_get.delete();
+        let mock_2_head = mock(HEAD, "/resource.txt")
             .return_status(200)
             .return_header(&ETAG_KEY.to_string()[..], "fake-etag-2")
+            .create();
+        let mock_2_get = mock(GET, "/resource.txt")
+            .return_status(200)
+            .return_header(&ETAG_KEY.to_string()[..], "fake-etag-2")
+            .return_body("Well hello again")
             .create();
 
         // Get the new cached path.
         let new_path = cache.cached_path(&resource[..]).await.unwrap();
+        assert_eq!(
+            new_path,
+            cache.resource_to_filepath(&resource, &Some(String::from("fake-etag-2")))
+        );
 
-        assert_eq!(mock_2.times_called(), 1);
-        assert_eq!(mock_2_header.times_called(), 1);
+        assert_eq!(mock_2_head.times_called(), 1);
+        assert_eq!(mock_2_get.times_called(), 1);
 
         // This should be different from the old path.
         assert_ne!(path, new_path);
