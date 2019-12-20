@@ -183,7 +183,7 @@ impl Cache {
             if versions[0].is_fresh() {
                 // Oh hey, the latest version is still fresh! We can clean up any
                 // older versions and return the latest.
-                debug!("Latest existing version of {} is still fresh", resource);
+                info!("Latest existing version of {} is still fresh", resource);
                 Cache::clean_up(&versions, Some(&versions[0].resource_path)).await;
                 return Ok(versions[0].resource_path.clone());
             } else {
@@ -196,7 +196,7 @@ impl Cache {
                     // Oh cool! The cache is up-to-date according to the ETAG.
                     // We'll return the up-to-date version and clean up any other
                     // dangling ones.
-                    info!("Cached version is up-to-date");
+                    info!("Cached version of {} is up-to-date", resource);
                     Cache::clean_up(&versions, Some(&path)).await;
                     return Ok(path);
                 }
@@ -207,7 +207,7 @@ impl Cache {
 
         // No up-to-date version cached, so we have to try downloading it.
         let meta = self.try_download_resource(resource, &url).await?;
-        debug!("Writing meta data to file for {}", resource);
+        info!("New version of {} cached", resource);
         meta.to_file().await?;
         Cache::clean_up(&versions, Some(&meta.resource_path)).await;
         Ok(meta.resource_path)
