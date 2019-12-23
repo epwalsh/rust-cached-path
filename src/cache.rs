@@ -124,7 +124,7 @@ impl CacheBuilder {
         })
     }
 
-    /// Build teh `Cache` object syncronously.
+    /// Build the `Cache` object syncronously.
     pub fn build_sync(self) -> Result<Cache, Error> {
         let root = self
             .config
