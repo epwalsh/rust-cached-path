@@ -123,6 +123,23 @@ impl CacheBuilder {
             freshness_lifetime: self.config.freshness_lifetime,
         })
     }
+
+    /// Build teh `Cache` object syncronously.
+    pub fn build_sync(self) -> Result<Cache, Error> {
+        let root = self
+            .config
+            .root
+            .unwrap_or_else(|| DEFAULT_CACHE_ROOT.clone());
+        let http_client = self.config.client_builder.build()?;
+        std::fs::create_dir_all(&root)?;
+        Ok(Cache {
+            root,
+            http_client,
+            max_retries: self.config.max_retries,
+            max_backoff: self.config.max_backoff,
+            freshness_lifetime: self.config.freshness_lifetime,
+        })
+    }
 }
 
 impl Default for CacheBuilder {

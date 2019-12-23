@@ -61,11 +61,3 @@ let path = cache.cached_path("README.md").await?;
 $ cached-path --root /tmp/my-cache/ --connect-timeout 3 README.md
 README.md
 ```
-
-## Best practices
-
-If your Rust code is going to call `cached_path` more than once, it's better
-to create a `Cache` instance with the builder and then use the instance method
-`Cache::cached_path` rather than calling the `cached_path` function on it's own,
-as this requires some overhead to create a new HTTP client and ensure the cache
-root exists.

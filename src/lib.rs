@@ -66,14 +66,6 @@
 //! $ cached-path --root /tmp/my-cache/ --connect-timeout 3 README.md
 //! README.md
 //! ```
-//!
-//! # Best practices
-//!
-//! If your Rust code is going to call `cached_path` more than once, it's better
-//! to create a `Cache` instance with the builder and then use the instance method
-//! `Cache::cached_path` rather than calling the `cached_path` function on it's own,
-//! as this requires some overhead to create a new HTTP client and ensure the cache
-//! root exists.
 
 use std::path::PathBuf;
 
@@ -89,6 +81,10 @@ pub use crate::cache::{Cache, CacheBuilder, DEFAULT_CACHE_ROOT};
 pub use crate::error::{Error, ErrorKind};
 pub use crate::meta::Meta;
 
+lazy_static! {
+    static ref CACHE: Cache = { Cache::builder().build_sync().unwrap() };
+}
+
 /// Try downloading and caching a static HTTP resource. If successful, the return value
 /// is the local path to the cached resource. This function will always check the ETAG
 /// of the resource to ensure the latest version is cached.
@@ -96,6 +92,5 @@ pub use crate::meta::Meta;
 /// This also works for local files, in which case the return value is just the original
 /// path.
 pub async fn cached_path(resource: &str) -> Result<PathBuf, Error> {
-    let cache = Cache::new().await?;
-    Ok(cache.cached_path(resource).await?)
+    Ok(CACHE.cached_path(resource).await?)
 }
