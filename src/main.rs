@@ -1,9 +1,8 @@
+use exitfailure::ExitFailure;
+use log::debug;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
-
-use exitfailure::ExitFailure;
-use log::debug;
 use structopt::StructOpt;
 use tokio::sync::mpsc::channel;
 

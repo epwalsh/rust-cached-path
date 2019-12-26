@@ -1,14 +1,13 @@
-use std::default::Default;
-use std::env;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
-
 use failure::ResultExt;
 use glob::glob;
 use log::{debug, error, info, warn};
 use rand::distributions::{Distribution, Uniform};
 use reqwest::header::ETAG;
 use reqwest::{Client, ClientBuilder};
+use std::default::Default;
+use std::env;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tempfile::NamedTempFile;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{self, AsyncWriteExt};

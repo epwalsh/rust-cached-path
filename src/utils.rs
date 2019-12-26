@@ -1,7 +1,6 @@
-use std::time::SystemTime;
-
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
+use std::time::SystemTime;
 
 pub(crate) fn hash_str(s: &str) -> String {
     let mut hasher = Sha256::new();

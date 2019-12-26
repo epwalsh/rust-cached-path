@@ -1,6 +1,5 @@
-use std::fmt;
-
 use failure::{Backtrace, Context, Fail};
+use std::fmt;
 
 /// Any error that can occur during caching.
 #[derive(Debug)]
