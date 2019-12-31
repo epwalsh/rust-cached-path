@@ -150,9 +150,6 @@ impl Default for CacheBuilder {
 /// When you need control over cache location or the HTTP client used to download
 /// resources, you can create a [`Cache`](struct.Cache.html) instance and then use the
 /// instance method [`cached_path`](struct.Cache.html#method.cached_path).
-///
-/// If you're going to be making more than a handful of calls to `cached_path`, this
-/// is the recommended way to do it.
 #[derive(Debug, Clone)]
 pub struct Cache {
     pub root: PathBuf,
