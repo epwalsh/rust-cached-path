@@ -447,8 +447,9 @@ mod tests {
                 .to_str()
                 .unwrap(),
             format!(
-                "{}/{}.{}",
+                "{}{}{}.{}",
                 cache_dir.path().to_str().unwrap(),
+                std::path::MAIN_SEPARATOR,
                 "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
                 "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589"
             )
@@ -459,8 +460,9 @@ mod tests {
                 .to_str()
                 .unwrap(),
             format!(
-                "{}/{}",
+                "{}{}{}",
                 cache_dir.path().to_str().unwrap(),
+                std::path::MAIN_SEPARATOR,
                 "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
             )
         );
