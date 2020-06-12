@@ -1,4 +1,5 @@
 use failure::ResultExt;
+use file_lock::FileLock;
 use glob::glob;
 use log::{debug, error, info, warn};
 use rand::distributions::{Distribution, Uniform};
@@ -9,8 +10,8 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tempfile::NamedTempFile;
-use tokio::fs::{self, File, OpenOptions};
-use tokio::io::{self, AsyncWriteExt};
+use tokio::fs::{self, OpenOptions};
+use tokio::io::AsyncWriteExt;
 use tokio::time::{self, delay_for};
 
 use crate::utils::hash_str;
@@ -42,6 +43,8 @@ struct Config {
     max_retries: u32,
     max_backoff: u32,
     freshness_lifetime: Option<u64>,
+    offline: bool,
+    only_keep_latest: bool,
 }
 
 impl CacheBuilder {
@@ -54,6 +57,8 @@ impl CacheBuilder {
                 max_retries: 3,
                 max_backoff: 5000,
                 freshness_lifetime: None,
+                offline: false,
+                only_keep_latest: false,
             },
         }
     }
@@ -106,6 +111,25 @@ impl CacheBuilder {
         self
     }
 
+    /// Only use offline functionality.
+    ///
+    /// If set to `true`, when the cached path of an HTTP resource is requested,
+    /// the latest cached version is returned without checking for freshness.
+    /// But if no cached version exist, an error is returned.
+    pub fn offline(mut self, offline: bool) -> CacheBuilder {
+        self.config.offline = offline;
+        self
+    }
+
+    /// Remove older cached versions of a resource when a newer version is cached.
+    ///
+    /// In general, setting this to `true` is not recommended because it could result
+    /// in deleting a cached file that another process is trying to read.
+    pub fn only_keep_latest(mut self, only_keep_latest: bool) -> CacheBuilder {
+        self.config.only_keep_latest = only_keep_latest;
+        self
+    }
+
     /// Build the `Cache` object.
     pub async fn build(self) -> Result<Cache, Error> {
         let root = self
@@ -120,6 +144,8 @@ impl CacheBuilder {
             max_retries: self.config.max_retries,
             max_backoff: self.config.max_backoff,
             freshness_lifetime: self.config.freshness_lifetime,
+            offline: self.config.offline,
+            only_keep_latest: self.config.only_keep_latest,
         })
     }
 
@@ -137,6 +163,8 @@ impl CacheBuilder {
             max_retries: self.config.max_retries,
             max_backoff: self.config.max_backoff,
             freshness_lifetime: self.config.freshness_lifetime,
+            offline: self.config.offline,
+            only_keep_latest: self.config.only_keep_latest,
         })
     }
 }
@@ -157,6 +185,8 @@ pub struct Cache {
     max_retries: u32,
     max_backoff: u32,
     freshness_lifetime: Option<u64>,
+    offline: bool,
+    only_keep_latest: bool,
 }
 
 impl Cache {
@@ -191,38 +221,57 @@ impl Cache {
         // Find any existing cached versions of resource and check if they are still
         // fresh according to the `freshness_lifetime` setting.
         let versions = self.find_existing(resource).await; // already sorted, latest is first.
-        if !versions.is_empty() {
-            debug!("Found {} cached versions of {}", versions.len(), resource);
-            if versions[0].is_fresh() {
-                // Oh hey, the latest version is still fresh! We can clean up any
-                // older versions and return the latest.
-                info!("Latest cached version of {} is still fresh", resource);
-                Cache::clean_up(&versions, Some(&versions[0].resource_path)).await;
+        if self.offline {
+            if !versions.is_empty() {
+                info!("Found existing cached version of {}", resource);
+                self.clean_up(&versions, Some(&versions[0].resource_path))
+                    .await;
                 return Ok(versions[0].resource_path.clone());
             } else {
-                // Existing versions are older than their freshness lifetimes, so we'll
-                // query for the ETAG of the resource and then compare that with existing
-                // versions.
-                let etag = self.try_get_etag(resource, &url).await?;
-                let path = self.resource_to_filepath(resource, &etag);
-                if path.exists() {
-                    // Oh cool! The cache is up-to-date according to the ETAG.
-                    // We'll return the up-to-date version and clean up any other
-                    // dangling ones.
-                    info!("Cached version of {} is up-to-date", resource);
-                    Cache::clean_up(&versions, Some(&path)).await;
-                    return Ok(path);
-                }
+                error!("Offline mode is enabled but no cached versions of resource exist.");
+                return Err(ErrorKind::NoCachedVersions(String::from(resource)).into());
             }
-        } else {
-            debug!("No cached versions found for {}", resource);
+        } else if !versions.is_empty() && versions[0].is_fresh(self.freshness_lifetime) {
+            // Oh hey, the latest version is still fresh! We can clean up any
+            // older versions and return the latest.
+            info!("Latest cached version of {} is still fresh", resource);
+            self.clean_up(&versions, Some(&versions[0].resource_path))
+                .await;
+            return Ok(versions[0].resource_path.clone());
+        }
+
+        // No existing version or the existing versions are older than their freshness
+        // lifetimes, so we'll query for the ETAG of the resource and then compare
+        // that with any existing versions.
+        let etag = self.try_get_etag(resource, &url).await?;
+        let path = self.resource_to_filepath(resource, &etag);
+
+        // Before going further we need to obtain a lock on the file to provide
+        // parallel downloads of the same resource.
+        info!("Acquiring lock for cache of {}", resource);
+        let lock_path = format!("{}.lock", path.to_str().unwrap());
+        let filelock = FileLock::lock(&lock_path, true, true)?;
+
+        if path.exists() {
+            // Oh cool! The cache is up-to-date according to the ETAG.
+            // We'll return the up-to-date version and clean up any other
+            // dangling ones.
+            info!("Cached version of {} is up-to-date", resource);
+            filelock.unlock()?;
+            if !versions.is_empty() {
+                self.clean_up(&versions, Some(&path)).await;
+            }
+            return Ok(path);
         }
 
         // No up-to-date version cached, so we have to try downloading it.
-        let meta = self.try_download_resource(resource, &url).await?;
+        let meta = self
+            .try_download_resource(resource, &url, &path, &etag)
+            .await?;
         info!("New version of {} cached", resource);
         meta.to_file().await?;
-        Cache::clean_up(&versions, Some(&meta.resource_path)).await;
+        filelock.unlock()?;
+        self.clean_up(&versions, Some(&meta.resource_path)).await;
         Ok(meta.resource_path)
     }
 
@@ -243,19 +292,21 @@ impl Cache {
         existing_meta
     }
 
-    async fn clean_up(versions: &[Meta], keep: Option<&Path>) {
-        for meta in versions {
-            if let Some(path) = keep {
-                if path == meta.resource_path {
-                    continue;
+    async fn clean_up(&self, versions: &[Meta], keep: Option<&Path>) {
+        if self.only_keep_latest {
+            for meta in versions {
+                if let Some(path) = keep {
+                    if path == meta.resource_path {
+                        continue;
+                    }
                 }
+                debug!(
+                    "Removing old version at {}",
+                    meta.resource_path.to_str().unwrap()
+                );
+                fs::remove_file(&meta.meta_path).await.ok();
+                fs::remove_file(&meta.resource_path).await.ok();
             }
-            debug!(
-                "Removing old version at {}",
-                meta.resource_path.to_str().unwrap()
-            );
-            fs::remove_file(&meta.meta_path).await.ok();
-            fs::remove_file(&meta.resource_path).await.ok();
         }
     }
 
@@ -272,10 +323,12 @@ impl Cache {
         &self,
         resource: &str,
         url: &reqwest::Url,
+        path: &Path,
+        etag: &Option<String>,
     ) -> Result<Meta, Error> {
         let mut retries: u32 = 0;
         loop {
-            match self.download_resource(resource, &url).await {
+            match self.download_resource(resource, &url, path, etag).await {
                 Ok(meta) => {
                     return Ok(meta);
                 }
@@ -300,7 +353,13 @@ impl Cache {
         }
     }
 
-    async fn download_resource(&self, resource: &str, url: &reqwest::Url) -> Result<Meta, Error> {
+    async fn download_resource(
+        &self,
+        resource: &str,
+        url: &reqwest::Url,
+        path: &Path,
+        etag: &Option<String>,
+    ) -> Result<Meta, Error> {
         debug!("Attempting connection to {}", url);
 
         let mut response = self
@@ -312,21 +371,11 @@ impl Cache {
 
         debug!("Opened connection to {}", url);
 
-        let mut etag: Option<String> = None;
-        if let Some(val) = response.headers().get(ETAG) {
-            if let Ok(s) = val.to_str() {
-                etag = Some(s.into());
-                debug!("Found new ETAG for {}", resource);
-            } else {
-                warn!("Error parsing ETAG for {}", resource);
-            }
-        }
-        let path = self.resource_to_filepath(resource, &etag);
-
         // First we make a temporary file and download the contents of the resource into it.
         // Otherwise if we wrote directly to the cache file and the download got
         // interrupted we could be left with a corrupted cache file.
-        let tempfile = NamedTempFile::new().context(ErrorKind::IoError(None))?;
+        let tempfile =
+            NamedTempFile::new_in(path.parent().unwrap()).context(ErrorKind::IoError(None))?;
         let mut tempfile_write_handle =
             OpenOptions::new().write(true).open(tempfile.path()).await?;
 
@@ -336,18 +385,16 @@ impl Cache {
             tempfile_write_handle.write_all(&chunk[..]).await?;
         }
 
-        debug!("Download complete for {}", url);
+        debug!("Renaming temp file to cache location for {}", url);
 
-        // Resource successfully written to the tempfile, so we can copy the tempfile
-        // over to the cache file.
-        let mut tempfile_read_handle = OpenOptions::new().read(true).open(tempfile.path()).await?;
-        let mut cache_file_write_handle = File::create(&path).await?;
+        fs::rename(tempfile.path(), &path).await?;
 
-        debug!("Copying resource temp file to cache location for {}", url);
-
-        io::copy(&mut tempfile_read_handle, &mut cache_file_write_handle).await?;
-
-        let meta = Meta::new(String::from(resource), path, etag, self.freshness_lifetime);
+        let meta = Meta::new(
+            String::from(resource),
+            path.into(),
+            etag.clone(),
+            self.freshness_lifetime,
+        );
 
         Ok(meta)
     }
@@ -504,9 +551,10 @@ mod tests {
 
         // Setup cache.
         let cache_dir = tempdir().unwrap();
-        let cache = Cache::builder()
+        let mut cache = Cache::builder()
             .root(cache_dir.path().to_owned())
             .freshness_lifetime(300)
+            .only_keep_latest(true)
             .build()
             .await
             .unwrap();
@@ -531,7 +579,7 @@ mod tests {
             cache.resource_to_filepath(&resource, &Some(String::from("fake-etag")))
         );
 
-        assert_eq!(mock_1_head.times_called(), 0);
+        assert_eq!(mock_1_head.times_called(), 1);
         assert_eq!(mock_1_get.times_called(), 1);
 
         // Ensure the file and meta exist.
@@ -544,19 +592,20 @@ mod tests {
 
         // When we attempt to get the resource again, the cache should still be fresh.
         let mut meta = Meta::from_cache(&path).await.unwrap();
-        assert!(meta.is_fresh());
+        assert!(meta.is_fresh(None));
         let same_path = cache.cached_path(&resource[..]).await.unwrap();
         assert_eq!(same_path, path);
         assert!(path.is_file());
         assert!(Meta::meta_path(&path).is_file());
 
         // Didn't have to call HEAD or GET again.
-        assert_eq!(mock_1_head.times_called(), 0);
+        assert_eq!(mock_1_head.times_called(), 1);
         assert_eq!(mock_1_get.times_called(), 1);
 
         // Now expire the resource to continue testing.
         meta.expires = None;
         meta.to_file().await.unwrap();
+        cache.freshness_lifetime = None;
 
         // After calling again when the resource is no longer fresh, the ETAG
         // should have been queried again with HEAD, but the resource should not have been
@@ -565,7 +614,7 @@ mod tests {
         assert_eq!(same_path, path);
         assert!(path.is_file());
         assert!(Meta::meta_path(&path).is_file());
-        assert_eq!(mock_1_head.times_called(), 1);
+        assert_eq!(mock_1_head.times_called(), 2);
         assert_eq!(mock_1_get.times_called(), 1);
 
         // Now update the resource.

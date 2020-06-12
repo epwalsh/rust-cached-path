@@ -16,6 +16,12 @@ pub enum ErrorKind {
     )]
     ResourceNotFound(String),
 
+    #[fail(
+        display = "Offline mode is enabled but no cached versions of resouce exist ({})",
+        _0
+    )]
+    NoCachedVersions(String),
+
     #[fail(display = "Unable to parse resource URL ({})", _0)]
     InvalidUrl(String),
 

@@ -44,6 +44,10 @@ struct Opt {
     #[structopt(long = "freshness-lifetime")]
     /// Set the a default freshness lifetime (in seconds) for cached resources.
     freshness_lifetime: Option<u64>,
+
+    #[structopt(long = "offline")]
+    /// Only use offline features.
+    offline: bool,
 }
 
 #[tokio::main]
@@ -87,7 +91,7 @@ async fn main() -> Result<(), ExitFailure> {
 }
 
 async fn build_cache_from_opt(opt: &Opt) -> Result<Cache, Error> {
-    let mut cache_builder = Cache::builder();
+    let mut cache_builder = Cache::builder().offline(opt.offline);
     if let Some(root) = &opt.root {
         cache_builder = cache_builder.root(root.clone());
     }
