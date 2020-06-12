@@ -44,6 +44,7 @@ struct Config {
     max_backoff: u32,
     freshness_lifetime: Option<u64>,
     offline: bool,
+    only_keep_latest: bool,
 }
 
 impl CacheBuilder {
@@ -57,6 +58,7 @@ impl CacheBuilder {
                 max_backoff: 5000,
                 freshness_lifetime: None,
                 offline: false,
+                only_keep_latest: false,
             },
         }
     }
@@ -108,6 +110,7 @@ impl CacheBuilder {
         self.config.freshness_lifetime = Some(freshness_lifetime);
         self
     }
+
     /// Only use offline functionality.
     ///
     /// If set to `true`, when the cached path of an HTTP resource is requested,
@@ -115,6 +118,15 @@ impl CacheBuilder {
     /// But if no cached version exist, an error is returned.
     pub fn offline(mut self, offline: bool) -> CacheBuilder {
         self.config.offline = offline;
+        self
+    }
+
+    /// Remove older cached versions of a resource when a newer version is cached.
+    ///
+    /// In general, setting this to `true` is not recommended because it could result
+    /// in deleting a cached file that another process is trying to read.
+    pub fn only_keep_latest(mut self, only_keep_latest: bool) -> CacheBuilder {
+        self.config.only_keep_latest = only_keep_latest;
         self
     }
 
@@ -133,6 +145,7 @@ impl CacheBuilder {
             max_backoff: self.config.max_backoff,
             freshness_lifetime: self.config.freshness_lifetime,
             offline: self.config.offline,
+            only_keep_latest: self.config.only_keep_latest,
         })
     }
 
@@ -151,6 +164,7 @@ impl CacheBuilder {
             max_backoff: self.config.max_backoff,
             freshness_lifetime: self.config.freshness_lifetime,
             offline: self.config.offline,
+            only_keep_latest: self.config.only_keep_latest,
         })
     }
 }
@@ -172,6 +186,7 @@ pub struct Cache {
     max_backoff: u32,
     freshness_lifetime: Option<u64>,
     offline: bool,
+    only_keep_latest: bool,
 }
 
 impl Cache {
@@ -209,7 +224,8 @@ impl Cache {
         if self.offline {
             if !versions.is_empty() {
                 info!("Found existing cached version of {}", resource);
-                Cache::clean_up(&versions, Some(&versions[0].resource_path)).await;
+                self.clean_up(&versions, Some(&versions[0].resource_path))
+                    .await;
                 return Ok(versions[0].resource_path.clone());
             } else {
                 error!("Offline mode is enabled but no cached versions of resource exist.");
@@ -219,7 +235,8 @@ impl Cache {
             // Oh hey, the latest version is still fresh! We can clean up any
             // older versions and return the latest.
             info!("Latest cached version of {} is still fresh", resource);
-            Cache::clean_up(&versions, Some(&versions[0].resource_path)).await;
+            self.clean_up(&versions, Some(&versions[0].resource_path))
+                .await;
             return Ok(versions[0].resource_path.clone());
         }
 
@@ -242,7 +259,7 @@ impl Cache {
             info!("Cached version of {} is up-to-date", resource);
             filelock.unlock()?;
             if !versions.is_empty() {
-                Cache::clean_up(&versions, Some(&path)).await;
+                self.clean_up(&versions, Some(&path)).await;
             }
             return Ok(path);
         }
@@ -254,7 +271,7 @@ impl Cache {
         info!("New version of {} cached", resource);
         meta.to_file().await?;
         filelock.unlock()?;
-        Cache::clean_up(&versions, Some(&meta.resource_path)).await;
+        self.clean_up(&versions, Some(&meta.resource_path)).await;
         Ok(meta.resource_path)
     }
 
@@ -275,19 +292,21 @@ impl Cache {
         existing_meta
     }
 
-    async fn clean_up(versions: &[Meta], keep: Option<&Path>) {
-        for meta in versions {
-            if let Some(path) = keep {
-                if path == meta.resource_path {
-                    continue;
+    async fn clean_up(&self, versions: &[Meta], keep: Option<&Path>) {
+        if self.only_keep_latest {
+            for meta in versions {
+                if let Some(path) = keep {
+                    if path == meta.resource_path {
+                        continue;
+                    }
                 }
+                debug!(
+                    "Removing old version at {}",
+                    meta.resource_path.to_str().unwrap()
+                );
+                fs::remove_file(&meta.meta_path).await.ok();
+                fs::remove_file(&meta.resource_path).await.ok();
             }
-            debug!(
-                "Removing old version at {}",
-                meta.resource_path.to_str().unwrap()
-            );
-            fs::remove_file(&meta.meta_path).await.ok();
-            fs::remove_file(&meta.resource_path).await.ok();
         }
     }
 
@@ -535,6 +554,7 @@ mod tests {
         let mut cache = Cache::builder()
             .root(cache_dir.path().to_owned())
             .freshness_lifetime(300)
+            .only_keep_latest(true)
             .build()
             .await
             .unwrap();
