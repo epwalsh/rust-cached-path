@@ -87,9 +87,14 @@ impl Meta {
         Ok(meta)
     }
 
-    /// Check if resource is still fresh.
-    pub fn is_fresh(&self) -> bool {
-        if let Some(expiration_time) = self.expires {
+    /// Check if resource is still fresh. Passing a `Some` value for
+    /// `freshness_lifetime` will override the expiration time (if there is one)
+    /// of this resource.
+    pub fn is_fresh(&self, freshness_lifetime: Option<u64>) -> bool {
+        if let Some(lifetime) = freshness_lifetime {
+            let expiration_time = self.creation_time + (lifetime as f64);
+            expiration_time > now()
+        } else if let Some(expiration_time) = self.expires {
             expiration_time > now()
         } else {
             false

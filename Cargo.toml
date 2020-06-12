@@ -1,6 +1,6 @@
 [package]
 name = "cached-path"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["epwalsh <epwalsh10@gmail.com>"]
 edition = "2018"
 keywords = ["http", "caching"]
@@ -21,6 +21,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+file-lock = "1.1"
 reqwest = "0.10.0"
 sha2 = "0.8"
 tempfile = "3.1"

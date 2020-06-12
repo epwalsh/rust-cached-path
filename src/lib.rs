@@ -82,7 +82,7 @@ pub use crate::error::{Error, ErrorKind};
 pub use crate::meta::Meta;
 
 lazy_static! {
-    static ref CACHE: Cache = { Cache::builder().build_sync().unwrap() };
+    static ref CACHE: Cache = Cache::builder().build_sync().unwrap();
 }
 
 /// Try downloading and caching a static HTTP resource. If successful, the return value
