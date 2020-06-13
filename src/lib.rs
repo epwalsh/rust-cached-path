@@ -1,11 +1,12 @@
-//! The idea behind `cached-path` is to provide a unified simple async interface for
+//! The idea behind `cached-path` is to provide a unified, simple interface for
 //! accessing both local and remote files. This can be used behind other APIs that need
 //! to access files agnostic to where they are located.
 //!
 //! # Usage
 //!
-//! For remote resources `cached-path` uses the ETAG to know when to update the cache.
-//! The path returned is the local path to the latest cached version:
+//! For remote resources, `cached-path` downloads and caches the resource, using the ETAG
+//! to know when to update the cache. The path returned is the local path to the latest
+//! cached version:
 //!
 //! ```rust
 //! use cached_path::cached_path;
@@ -36,14 +37,17 @@
 //! README.md
 //! ```
 //!
-//! It's easy to customize the configuration when you need more control over the cache
-//! location or the HTTP client used to download files:
+//! It's easy to customize the cache location, the HTTP client, and other options
+//! using a [`CacheBuilder`](struct.CacheBuilder.html) to construct a custom
+//! [`Cache`](struct.Cache.html) object. This is also the recommend thing
+//! to do if your application makes multiple calls to `cached_path`, since it avoids the overhead
+//! of creating a new HTTP client on each call:
 //!
 //! ```rust
 //! use cached_path::Cache;
 //!
 //! let cache = Cache::builder()
-//!     .root(std::env::temp_dir().join("my-cache/"))
+//!     .dir(std::env::temp_dir().join("my-cache/"))
 //!     .connect_timeout(std::time::Duration::from_secs(3))
 //!     .build().unwrap();
 //! let path = cache.cached_path("README.md").unwrap();
@@ -51,34 +55,31 @@
 //!
 //! ```bash
 //! # From the command line:
-//! $ cached-path --root /tmp/my-cache/ --connect-timeout 3 README.md
+//! $ cached-path --dir /tmp/my-cache/ --connect-timeout 3 README.md
 //! README.md
 //! ```
 
 use std::path::PathBuf;
-
-#[macro_use]
-extern crate lazy_static;
 
 mod cache;
 mod error;
 mod meta;
 pub(crate) mod utils;
 
-pub use crate::cache::{Cache, CacheBuilder, DEFAULT_CACHE_ROOT};
+pub use crate::cache::{Cache, CacheBuilder};
 pub use crate::error::{Error, ErrorKind};
 pub use crate::meta::Meta;
 
-lazy_static! {
-    static ref CACHE: Cache = Cache::builder().build().unwrap();
-}
-
-/// Try downloading and caching a static HTTP resource. If successful, the return value
-/// is the local path to the cached resource. This function will always check the ETAG
-/// of the resource to ensure the latest version is cached.
+/// Get the cached path to a resource.
 ///
-/// This also works for local files, in which case the return value is just the original
-/// path.
+/// If the resource is local file, it's path is returned. If the resource is a static HTTP
+/// resource, it will cached locally and the path to the cache file will be returned.
+///
+/// Internally this function just creates a default [`Cache`](struct.Cache.html) object and then
+/// calls [`Cache::cached_path`](struct.Cache.html#method.cached_path).
+/// Therefore if you're going to be calling this function multiple times,
+/// it's probably more efficient to create and use a single `Cache` instead.
 pub fn cached_path(resource: &str) -> Result<PathBuf, Error> {
-    Ok(CACHE.cached_path(resource)?)
+    let cache = Cache::builder().build()?;
+    Ok(cache.cached_path(resource)?)
 }

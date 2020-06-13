@@ -71,14 +71,12 @@ impl Meta {
     /// let meta = Meta::from_cache(&path).unwrap();
     /// assert_eq!(&meta.resource[..], resource);
     /// ```
-    #[cfg(not(feature = "async"))]
     pub fn from_cache(resource_path: &Path) -> Result<Self, Error> {
         let meta_path = Meta::meta_path(resource_path);
         Meta::from_path(&meta_path)
     }
 
     /// Read `Meta` from a path.
-    #[cfg(not(feature = "async"))]
     pub(crate) fn from_path(path: &Path) -> Result<Self, Error> {
         let serialized = fs::read_to_string(path)?;
         let meta: Meta = serde_json::from_str(&serialized[..]).unwrap();

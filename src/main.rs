@@ -17,10 +17,10 @@ struct Opt {
     /// The resource paths.
     resource: String,
 
-    #[structopt(long = "root", env = "RUST_CACHED_PATH_ROOT")]
-    /// The root cache directory. Defaults to a subdirectory 'cache' of the default
+    #[structopt(long = "dir", env = "RUST_CACHED_PATH_ROOT")]
+    /// The cache directory. Defaults to a subdirectory named 'cache' of the default
     /// system temporary directory.
-    root: Option<PathBuf>,
+    dir: Option<PathBuf>,
 
     #[structopt(long = "timeout")]
     /// Set a request timeout.
@@ -63,8 +63,8 @@ fn main() -> Result<(), ExitFailure> {
 
 fn build_cache_from_opt(opt: &Opt) -> Result<Cache, Error> {
     let mut cache_builder = Cache::builder().offline(opt.offline);
-    if let Some(root) = &opt.root {
-        cache_builder = cache_builder.root(root.clone());
+    if let Some(dir) = &opt.dir {
+        cache_builder = cache_builder.dir(dir.clone());
     }
     if let Some(timeout) = opt.timeout {
         cache_builder = cache_builder.timeout(Duration::from_secs(timeout));

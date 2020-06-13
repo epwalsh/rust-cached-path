@@ -17,19 +17,6 @@ use tempfile::NamedTempFile;
 use crate::utils::hash_str;
 use crate::{Error, ErrorKind, Meta};
 
-lazy_static! {
-    /// The default cache directory. This can be set through the environment
-    /// variable `RUST_CACHED_PATH_ROOT`. Otherwise it will be set to a subdirectory
-    /// named 'cache' of the default system temp directory.
-    pub static ref DEFAULT_CACHE_ROOT: PathBuf = {
-        if let Some(root_str) = env::var_os("RUST_CACHED_PATH_ROOT") {
-            PathBuf::from(root_str)
-        } else {
-            env::temp_dir().join("cache/")
-        }
-    };
-}
-
 /// Builder to facilitate creating [`Cache`](struct.Cache.html) objects.
 #[derive(Debug)]
 pub struct CacheBuilder {
@@ -38,7 +25,7 @@ pub struct CacheBuilder {
 
 #[derive(Debug)]
 struct Config {
-    root: Option<PathBuf>,
+    dir: Option<PathBuf>,
     client_builder: ClientBuilder,
     max_retries: u32,
     max_backoff: u32,
@@ -52,7 +39,7 @@ impl CacheBuilder {
     pub fn new() -> CacheBuilder {
         CacheBuilder {
             config: Config {
-                root: None,
+                dir: None,
                 client_builder: ClientBuilder::new(),
                 max_retries: 3,
                 max_backoff: 5000,
@@ -68,9 +55,11 @@ impl CacheBuilder {
         CacheBuilder::new().client_builder(client_builder)
     }
 
-    /// Set the root directory.
-    pub fn root(mut self, root: PathBuf) -> CacheBuilder {
-        self.config.root = Some(root);
+    /// Set the cache location. This can be set through the environment
+    /// variable `RUST_CACHED_PATH_ROOT`. Otherwise it will default to a subdirectory
+    /// named 'cache' of the default system temp directory.
+    pub fn dir(mut self, dir: PathBuf) -> CacheBuilder {
+        self.config.dir = Some(dir);
         self
     }
 
@@ -115,7 +104,8 @@ impl CacheBuilder {
     ///
     /// If set to `true`, when the cached path of an HTTP resource is requested,
     /// the latest cached version is returned without checking for freshness.
-    /// But if no cached version exist, an error is returned.
+    /// But if no cached versions exist, a
+    /// [`NoCachedVersions`](enum.ErrorKind.html#variant.NoCachedVersions) error is returned.
     pub fn offline(mut self, offline: bool) -> CacheBuilder {
         self.config.offline = offline;
         self
@@ -132,14 +122,17 @@ impl CacheBuilder {
 
     /// Build the `Cache` object.
     pub fn build(self) -> Result<Cache, Error> {
-        let root = self
-            .config
-            .root
-            .unwrap_or_else(|| DEFAULT_CACHE_ROOT.clone());
+        let dir = self.config.dir.unwrap_or_else(|| {
+            if let Some(dir_str) = env::var_os("RUST_CACHED_PATH_ROOT") {
+                PathBuf::from(dir_str)
+            } else {
+                env::temp_dir().join("cache/")
+            }
+        });
         let http_client = self.config.client_builder.build()?;
-        fs::create_dir_all(&root)?;
+        fs::create_dir_all(&dir)?;
         Ok(Cache {
-            root,
+            dir,
             http_client,
             max_retries: self.config.max_retries,
             max_backoff: self.config.max_backoff,
@@ -161,7 +154,7 @@ impl Default for CacheBuilder {
 /// instance method [`cached_path`](struct.Cache.html#method.cached_path).
 #[derive(Debug, Clone)]
 pub struct Cache {
-    pub root: PathBuf,
+    pub dir: PathBuf,
     http_client: Client,
     max_retries: u32,
     max_backoff: u32,
@@ -181,7 +174,10 @@ impl Cache {
         CacheBuilder::new()
     }
 
-    /// Works just like [`cached_path`](fn.cached_path.html).
+    /// Get the cached path to a resource.
+    ///
+    /// If the resource is local file, it's path is returned. If the resource is a static HTTP
+    /// resource, it will cached locally and the path to the cache file will be returned.
     pub fn cached_path(&self, resource: &str) -> Result<PathBuf, Error> {
         // If resource doesn't look like a URL, treat as local path, but return
         // an error if the path doesn't exist.
@@ -430,7 +426,7 @@ impl Cache {
 
         let filepath = PathBuf::from(filename);
 
-        self.root.join(filepath)
+        self.dir.join(filepath)
     }
 }
 
@@ -448,7 +444,7 @@ mod tests {
     fn test_url_to_filename() {
         let cache_dir = tempdir().unwrap();
         let cache = Cache::builder()
-            .root(cache_dir.path().to_owned())
+            .dir(cache_dir.path().to_owned())
             .build()
             .unwrap();
 
@@ -487,7 +483,7 @@ mod tests {
         // Setup cache.
         let cache_dir = tempdir().unwrap();
         let cache = Cache::builder()
-            .root(cache_dir.path().to_owned())
+            .dir(cache_dir.path().to_owned())
             .build()
             .unwrap();
 
@@ -500,7 +496,7 @@ mod tests {
         // Setup cache.
         let cache_dir = tempdir().unwrap();
         let cache = Cache::builder()
-            .root(cache_dir.path().to_owned())
+            .dir(cache_dir.path().to_owned())
             .build()
             .unwrap();
 
@@ -517,7 +513,7 @@ mod tests {
         // Setup cache.
         let cache_dir = tempdir().unwrap();
         let mut cache = Cache::builder()
-            .root(cache_dir.path().to_owned())
+            .dir(cache_dir.path().to_owned())
             .freshness_lifetime(300)
             .only_keep_latest(true)
             .build()
