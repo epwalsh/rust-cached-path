@@ -10,12 +10,9 @@
 //! ```rust
 //! use cached_path::cached_path;
 //!
-//! # #[tokio::main]
-//! # async fn main() -> Result<(), cached_path::Error> {
-//! let path = cached_path("https://github.com/epwalsh/rust-cached-path/blob/master/README.md").await?;
+//! let path =
+//! cached_path("https://github.com/epwalsh/rust-cached-path/blob/master/README.md").unwrap();
 //! assert!(path.is_file());
-//! # Ok(())
-//! # }
 //! ```
 //!
 //! ```bash
@@ -29,12 +26,8 @@
 //! ```rust
 //! use cached_path::cached_path;
 //!
-//! # #[tokio::main]
-//! # async fn main() -> Result<(), cached_path::Error> {
-//! let path = cached_path("README.md").await?;
+//! let path = cached_path("README.md").unwrap();
 //! assert_eq!(path.to_str().unwrap(), "README.md");
-//! # Ok(())
-//! # }
 //! ```
 //!
 //! ```bash
@@ -49,16 +42,11 @@
 //! ```rust
 //! use cached_path::Cache;
 //!
-//! # #[tokio::main]
-//! # async fn main() -> Result<(), cached_path::Error> {
 //! let cache = Cache::builder()
 //!     .root(std::env::temp_dir().join("my-cache/"))
 //!     .connect_timeout(std::time::Duration::from_secs(3))
-//!     .build()
-//!     .await?;
-//! let path = cache.cached_path("README.md").await?;
-//! # Ok(())
-//! # }
+//!     .build().unwrap();
+//! let path = cache.cached_path("README.md").unwrap();
 //! ```
 //!
 //! ```bash
@@ -82,7 +70,7 @@ pub use crate::error::{Error, ErrorKind};
 pub use crate::meta::Meta;
 
 lazy_static! {
-    static ref CACHE: Cache = Cache::builder().build_sync().unwrap();
+    static ref CACHE: Cache = Cache::builder().build().unwrap();
 }
 
 /// Try downloading and caching a static HTTP resource. If successful, the return value
@@ -91,6 +79,6 @@ lazy_static! {
 ///
 /// This also works for local files, in which case the return value is just the original
 /// path.
-pub async fn cached_path(resource: &str) -> Result<PathBuf, Error> {
-    Ok(CACHE.cached_path(resource).await?)
+pub fn cached_path(resource: &str) -> Result<PathBuf, Error> {
+    Ok(CACHE.cached_path(resource)?)
 }

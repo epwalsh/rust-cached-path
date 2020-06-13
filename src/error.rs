@@ -1,5 +1,6 @@
 use failure::{Backtrace, Context, Fail};
 use std::fmt;
+use std::io;
 
 /// Any error that can occur during caching.
 #[derive(Debug)]
@@ -26,7 +27,7 @@ pub enum ErrorKind {
     InvalidUrl(String),
 
     #[fail(display = "An IO error occurred: {:?}", _0)]
-    IoError(Option<tokio::io::ErrorKind>),
+    IoError(Option<io::ErrorKind>),
 
     #[fail(display = "HTTP response had status code {}", _0)]
     HttpStatusError(u16),
@@ -76,8 +77,8 @@ impl Error {
     }
 }
 
-impl From<tokio::io::Error> for Error {
-    fn from(err: tokio::io::Error) -> Error {
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Error {
         Error {
             inner: Context::new(ErrorKind::IoError(Some(err.kind()))),
         }

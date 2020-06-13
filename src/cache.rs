@@ -3,16 +3,16 @@ use file_lock::FileLock;
 use glob::glob;
 use log::{debug, error, info, warn};
 use rand::distributions::{Distribution, Uniform};
+use reqwest::blocking::{Client, ClientBuilder};
 use reqwest::header::ETAG;
-use reqwest::{Client, ClientBuilder};
 use std::default::Default;
 use std::env;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::thread;
+use std::time::{self, Duration};
 use tempfile::NamedTempFile;
-use tokio::fs::{self, OpenOptions};
-use tokio::io::AsyncWriteExt;
-use tokio::time::{self, delay_for};
 
 use crate::utils::hash_str;
 use crate::{Error, ErrorKind, Meta};
@@ -131,32 +131,13 @@ impl CacheBuilder {
     }
 
     /// Build the `Cache` object.
-    pub async fn build(self) -> Result<Cache, Error> {
+    pub fn build(self) -> Result<Cache, Error> {
         let root = self
             .config
             .root
             .unwrap_or_else(|| DEFAULT_CACHE_ROOT.clone());
         let http_client = self.config.client_builder.build()?;
-        fs::create_dir_all(&root).await?;
-        Ok(Cache {
-            root,
-            http_client,
-            max_retries: self.config.max_retries,
-            max_backoff: self.config.max_backoff,
-            freshness_lifetime: self.config.freshness_lifetime,
-            offline: self.config.offline,
-            only_keep_latest: self.config.only_keep_latest,
-        })
-    }
-
-    /// Build the `Cache` object syncronously.
-    pub fn build_sync(self) -> Result<Cache, Error> {
-        let root = self
-            .config
-            .root
-            .unwrap_or_else(|| DEFAULT_CACHE_ROOT.clone());
-        let http_client = self.config.client_builder.build()?;
-        std::fs::create_dir_all(&root)?;
+        fs::create_dir_all(&root)?;
         Ok(Cache {
             root,
             http_client,
@@ -191,8 +172,8 @@ pub struct Cache {
 
 impl Cache {
     /// Create a new `Cache` instance.
-    pub async fn new() -> Result<Self, Error> {
-        Cache::builder().build().await
+    pub fn new() -> Result<Self, Error> {
+        Cache::builder().build()
     }
 
     /// Create a `CacheBuilder`.
@@ -201,7 +182,7 @@ impl Cache {
     }
 
     /// Works just like [`cached_path`](fn.cached_path.html).
-    pub async fn cached_path(&self, resource: &str) -> Result<PathBuf, Error> {
+    pub fn cached_path(&self, resource: &str) -> Result<PathBuf, Error> {
         // If resource doesn't look like a URL, treat as local path, but return
         // an error if the path doesn't exist.
         if !resource.starts_with("http") {
@@ -220,12 +201,11 @@ impl Cache {
 
         // Find any existing cached versions of resource and check if they are still
         // fresh according to the `freshness_lifetime` setting.
-        let versions = self.find_existing(resource).await; // already sorted, latest is first.
+        let versions = self.find_existing(resource); // already sorted, latest is first.
         if self.offline {
             if !versions.is_empty() {
                 info!("Found existing cached version of {}", resource);
-                self.clean_up(&versions, Some(&versions[0].resource_path))
-                    .await;
+                self.clean_up(&versions, Some(&versions[0].resource_path));
                 return Ok(versions[0].resource_path.clone());
             } else {
                 error!("Offline mode is enabled but no cached versions of resource exist.");
@@ -235,15 +215,14 @@ impl Cache {
             // Oh hey, the latest version is still fresh! We can clean up any
             // older versions and return the latest.
             info!("Latest cached version of {} is still fresh", resource);
-            self.clean_up(&versions, Some(&versions[0].resource_path))
-                .await;
+            self.clean_up(&versions, Some(&versions[0].resource_path));
             return Ok(versions[0].resource_path.clone());
         }
 
         // No existing version or the existing versions are older than their freshness
         // lifetimes, so we'll query for the ETAG of the resource and then compare
         // that with any existing versions.
-        let etag = self.try_get_etag(resource, &url).await?;
+        let etag = self.try_get_etag(resource, &url)?;
         let path = self.resource_to_filepath(resource, &etag);
 
         // Before going further we need to obtain a lock on the file to provide
@@ -259,31 +238,29 @@ impl Cache {
             info!("Cached version of {} is up-to-date", resource);
             filelock.unlock()?;
             if !versions.is_empty() {
-                self.clean_up(&versions, Some(&path)).await;
+                self.clean_up(&versions, Some(&path));
             }
             return Ok(path);
         }
 
         // No up-to-date version cached, so we have to try downloading it.
-        let meta = self
-            .try_download_resource(resource, &url, &path, &etag)
-            .await?;
+        let meta = self.try_download_resource(resource, &url, &path, &etag)?;
         info!("New version of {} cached", resource);
-        meta.to_file().await?;
+        meta.to_file()?;
         filelock.unlock()?;
-        self.clean_up(&versions, Some(&meta.resource_path)).await;
+        self.clean_up(&versions, Some(&meta.resource_path));
         Ok(meta.resource_path)
     }
 
     /// Find existing versions of a cached resource, sorted by most recent first.
-    async fn find_existing(&self, resource: &str) -> Vec<Meta> {
+    fn find_existing(&self, resource: &str) -> Vec<Meta> {
         let mut existing_meta: Vec<Meta> = vec![];
         let glob_string = format!(
             "{}.*.meta",
             self.resource_to_filepath(resource, &None).to_str().unwrap(),
         );
         for meta_path in glob(&glob_string).unwrap().filter_map(Result::ok) {
-            if let Ok(meta) = Meta::from_path(&meta_path).await {
+            if let Ok(meta) = Meta::from_path(&meta_path) {
                 existing_meta.push(meta);
             }
         }
@@ -292,7 +269,7 @@ impl Cache {
         existing_meta
     }
 
-    async fn clean_up(&self, versions: &[Meta], keep: Option<&Path>) {
+    fn clean_up(&self, versions: &[Meta], keep: Option<&Path>) {
         if self.only_keep_latest {
             for meta in versions {
                 if let Some(path) = keep {
@@ -304,8 +281,8 @@ impl Cache {
                     "Removing old version at {}",
                     meta.resource_path.to_str().unwrap()
                 );
-                fs::remove_file(&meta.meta_path).await.ok();
-                fs::remove_file(&meta.resource_path).await.ok();
+                fs::remove_file(&meta.meta_path).ok();
+                fs::remove_file(&meta.resource_path).ok();
             }
         }
     }
@@ -319,7 +296,7 @@ impl Cache {
         )
     }
 
-    async fn try_download_resource(
+    fn try_download_resource(
         &self,
         resource: &str,
         url: &reqwest::Url,
@@ -328,7 +305,7 @@ impl Cache {
     ) -> Result<Meta, Error> {
         let mut retries: u32 = 0;
         loop {
-            match self.download_resource(resource, &url, path, etag).await {
+            match self.download_resource(resource, &url, path, etag) {
                 Ok(meta) => {
                     return Ok(meta);
                 }
@@ -347,13 +324,13 @@ impl Cache {
                         "Download failed for {}, retrying in {} milliseconds...",
                         resource, retry_delay
                     );
-                    delay_for(time::Duration::from_millis(u64::from(retry_delay))).await;
+                    thread::sleep(time::Duration::from_millis(u64::from(retry_delay)));
                 }
             }
         }
     }
 
-    async fn download_resource(
+    fn download_resource(
         &self,
         resource: &str,
         url: &reqwest::Url,
@@ -362,11 +339,10 @@ impl Cache {
     ) -> Result<Meta, Error> {
         debug!("Attempting connection to {}", url);
 
-        let mut response = self
+        let response = self
             .http_client
             .get(url.clone())
-            .send()
-            .await?
+            .send()?
             .error_for_status()?;
 
         debug!("Opened connection to {}", url);
@@ -376,18 +352,15 @@ impl Cache {
         // interrupted we could be left with a corrupted cache file.
         let tempfile =
             NamedTempFile::new_in(path.parent().unwrap()).context(ErrorKind::IoError(None))?;
-        let mut tempfile_write_handle =
-            OpenOptions::new().write(true).open(tempfile.path()).await?;
+        let mut tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path())?;
 
         debug!("Starting download of {}", url);
 
-        while let Some(chunk) = response.chunk().await? {
-            tempfile_write_handle.write_all(&chunk[..]).await?;
-        }
+        tempfile_write_handle.write(&response.bytes()?)?;
 
         debug!("Renaming temp file to cache location for {}", url);
 
-        fs::rename(tempfile.path(), &path).await?;
+        fs::rename(tempfile.path(), &path)?;
 
         let meta = Meta::new(
             String::from(resource),
@@ -399,14 +372,10 @@ impl Cache {
         Ok(meta)
     }
 
-    async fn try_get_etag(
-        &self,
-        resource: &str,
-        url: &reqwest::Url,
-    ) -> Result<Option<String>, Error> {
+    fn try_get_etag(&self, resource: &str, url: &reqwest::Url) -> Result<Option<String>, Error> {
         let mut retries: u32 = 0;
         loop {
-            match self.get_etag(&url).await {
+            match self.get_etag(&url) {
                 Ok(etag) => return Ok(etag),
                 Err(err) => {
                     if retries >= self.max_retries {
@@ -423,19 +392,18 @@ impl Cache {
                         "ETAG fetch failed for {}, retrying in {} milliseconds...",
                         resource, retry_delay
                     );
-                    delay_for(time::Duration::from_millis(u64::from(retry_delay))).await;
+                    thread::sleep(time::Duration::from_millis(u64::from(retry_delay)));
                 }
             }
         }
     }
 
-    async fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Error> {
+    fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Error> {
         debug!("Fetching ETAG for {}", url);
         let response = self
             .http_client
             .head(url.clone())
-            .send()
-            .await?
+            .send()?
             .error_for_status()?;
         if let Some(etag) = response.headers().get(ETAG) {
             if let Ok(s) = etag.to_str() {
@@ -476,13 +444,12 @@ mod tests {
 
     static ETAG_KEY: reqwest::header::HeaderName = ETAG;
 
-    #[tokio::test]
-    async fn test_url_to_filename() {
+    #[test]
+    fn test_url_to_filename() {
         let cache_dir = tempdir().unwrap();
         let cache = Cache::builder()
             .root(cache_dir.path().to_owned())
             .build()
-            .await
             .unwrap();
 
         let resource = "http://localhost:5000/foo.txt";
@@ -515,37 +482,35 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_get_cached_path_local_file() {
+    #[test]
+    fn test_get_cached_path_local_file() {
         // Setup cache.
         let cache_dir = tempdir().unwrap();
         let cache = Cache::builder()
             .root(cache_dir.path().to_owned())
             .build()
-            .await
             .unwrap();
 
-        let path = cache.cached_path("README.md").await.unwrap();
+        let path = cache.cached_path("README.md").unwrap();
         assert_eq!(path, Path::new("README.md"));
     }
 
-    #[tokio::test]
-    async fn test_get_cached_path_non_existant_local_file_fails() {
+    #[test]
+    fn test_get_cached_path_non_existant_local_file_fails() {
         // Setup cache.
         let cache_dir = tempdir().unwrap();
         let cache = Cache::builder()
             .root(cache_dir.path().to_owned())
             .build()
-            .await
             .unwrap();
 
-        let result = cache.cached_path("BLAH").await;
+        let result = cache.cached_path("BLAH");
         assert!(result.is_err());
     }
 
-    #[tokio::test]
     #[with_mock_server]
-    async fn test_cached_path() {
+    #[test]
+    fn test_cached_path() {
         // For debugging:
         // let _ = env_logger::try_init();
 
@@ -556,7 +521,6 @@ mod tests {
             .freshness_lifetime(300)
             .only_keep_latest(true)
             .build()
-            .await
             .unwrap();
 
         let resource = "http://localhost:5000/resource.txt";
@@ -573,7 +537,7 @@ mod tests {
             .create();
 
         // Get the cached path.
-        let path = cache.cached_path(&resource[..]).await.unwrap();
+        let path = cache.cached_path(&resource[..]).unwrap();
         assert_eq!(
             path,
             cache.resource_to_filepath(&resource, &Some(String::from("fake-etag")))
@@ -591,9 +555,9 @@ mod tests {
         assert_eq!(&contents[..], "Hello, World!");
 
         // When we attempt to get the resource again, the cache should still be fresh.
-        let mut meta = Meta::from_cache(&path).await.unwrap();
+        let mut meta = Meta::from_cache(&path).unwrap();
         assert!(meta.is_fresh(None));
-        let same_path = cache.cached_path(&resource[..]).await.unwrap();
+        let same_path = cache.cached_path(&resource[..]).unwrap();
         assert_eq!(same_path, path);
         assert!(path.is_file());
         assert!(Meta::meta_path(&path).is_file());
@@ -604,13 +568,13 @@ mod tests {
 
         // Now expire the resource to continue testing.
         meta.expires = None;
-        meta.to_file().await.unwrap();
+        meta.to_file().unwrap();
         cache.freshness_lifetime = None;
 
         // After calling again when the resource is no longer fresh, the ETAG
         // should have been queried again with HEAD, but the resource should not have been
         // downloaded again with GET.
-        let same_path = cache.cached_path(&resource[..]).await.unwrap();
+        let same_path = cache.cached_path(&resource[..]).unwrap();
         assert_eq!(same_path, path);
         assert!(path.is_file());
         assert!(Meta::meta_path(&path).is_file());
@@ -631,7 +595,7 @@ mod tests {
             .create();
 
         // Get the new cached path.
-        let new_path = cache.cached_path(&resource[..]).await.unwrap();
+        let new_path = cache.cached_path(&resource[..]).unwrap();
         assert_eq!(
             new_path,
             cache.resource_to_filepath(&resource, &Some(String::from("fake-etag-2")))

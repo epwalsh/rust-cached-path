@@ -1,10 +1,8 @@
 use exitfailure::ExitFailure;
 use log::debug;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 use structopt::StructOpt;
-use tokio::sync::mpsc::channel;
 
 use cached_path::{Cache, Error};
 
@@ -17,7 +15,7 @@ use cached_path::{Cache, Error};
 struct Opt {
     #[structopt()]
     /// The resource paths.
-    resource: Vec<String>,
+    resource: String,
 
     #[structopt(long = "root", env = "RUST_CACHED_PATH_ROOT")]
     /// The root cache directory. Defaults to a subdirectory 'cache' of the default
@@ -50,47 +48,20 @@ struct Opt {
     offline: bool,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), ExitFailure> {
+fn main() -> Result<(), ExitFailure> {
     env_logger::init();
     let opt = Opt::from_args();
 
     debug!("{:?}", opt);
 
-    let cache = build_cache_from_opt(&opt).await?;
-
-    let (tx, mut rx) = channel(100);
-
-    for resource in &opt.resource {
-        let mut tx = tx.clone();
-        let resource = resource.clone();
-        let cache = cache.clone();
-        tokio::spawn(async move {
-            let result = cache.cached_path(&resource[..]).await;
-            if tx.send((resource, result)).await.is_err() {
-                std::process::exit(1);
-            };
-        });
-    }
-
-    drop(tx);
-
-    let mut cached_paths: HashMap<String, PathBuf> = HashMap::new();
-
-    while let Some((resource, result)) = rx.recv().await {
-        let path = result?;
-        cached_paths.insert(resource, path);
-    }
-
-    for resource in &opt.resource {
-        let path = cached_paths.get(&resource[..]).unwrap();
-        println!("{}", path.to_string_lossy());
-    }
+    let cache = build_cache_from_opt(&opt)?;
+    let path = cache.cached_path(&opt.resource)?;
+    println!("{}", path.to_string_lossy());
 
     Ok(())
 }
 
-async fn build_cache_from_opt(opt: &Opt) -> Result<Cache, Error> {
+fn build_cache_from_opt(opt: &Opt) -> Result<Cache, Error> {
     let mut cache_builder = Cache::builder().offline(opt.offline);
     if let Some(root) = &opt.root {
         cache_builder = cache_builder.root(root.clone());
@@ -106,5 +77,5 @@ async fn build_cache_from_opt(opt: &Opt) -> Result<Cache, Error> {
     }
     cache_builder = cache_builder.max_retries(opt.max_retries);
     cache_builder = cache_builder.max_backoff(opt.max_backoff);
-    cache_builder.build().await
+    cache_builder.build()
 }
