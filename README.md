@@ -45,8 +45,8 @@ README.md
 ```
 
 It's easy to customize the cache location, the HTTP client, and other options
-using a [`CacheBuilder`](struct.CacheBuilder.html) to construct a custom
-[`Cache`](struct.Cache.html) object. This is also the recommend thing
+using a [`CacheBuilder`](https://docs.rs/cached-path/*/cached_path/struct.CacheBuilder.html) to construct a custom
+[`Cache`](https://docs.rs/cached-path/*/cached_path/struct.Cache.html) object. This is also the recommend thing
 to do if your application makes multiple calls to `cached_path`, since it avoids the overhead
 of creating a new HTTP client on each call:
 
