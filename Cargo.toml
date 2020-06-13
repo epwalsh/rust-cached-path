@@ -23,7 +23,7 @@ doc = false
 [dependencies]
 file-lock = "1.1"
 reqwest = "0.10.0"
-sha2 = "0.8"
+sha2 = "0.9"
 tempfile = "3.1"
 structopt = "0.3"
 log = "0.4"
