@@ -356,7 +356,7 @@ impl Cache {
 
         debug!("Starting download of {}", url);
 
-        tempfile_write_handle.write(&response.bytes()?)?;
+        tempfile_write_handle.write_all(&response.bytes()?)?;
 
         debug!("Renaming temp file to cache location for {}", url);
 
