@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- API is now syncronous
+- `root` configuration option renamed to `dir`.
+
 ## v0.2.0
 
 ### Added

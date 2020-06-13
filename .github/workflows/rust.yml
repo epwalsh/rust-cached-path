@@ -7,14 +7,35 @@ on:
   push:
     branches:
     - master
+  release:
+    types: [published]
   schedule:
     - cron: '0 10 * * *' # run at 10 AM UTC
 
 jobs:
-  build:
-
+  changelog:
+    name: CHANGELOG
     runs-on: ubuntu-latest
+    # Only run this on pull requests.
+    if: github.event_name == 'pull_request'
 
+    steps:
+    # Note that checkout@v2 will not work with the git command below!
+    - uses: actions/checkout@v1
+
+    - name: Debugging info
+      run: |
+        git remote -v
+
+    - name: Check that CHANGELOG has been updated
+      run: |
+        # If this step fails, this means you haven't updated the CHANGELOG.md
+        # file with notes on your contribution.
+        git diff --name-only $(git merge-base origin/master HEAD) | grep '^CHANGELOG.md$' && echo "Thanks for helping keep our CHANGELOG up-to-date!"
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
 
@@ -72,31 +93,36 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --lib
+        args: --lib --all-features
 
     - name: Run doc tests
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --doc
+        args: --doc --all-features
 
-  changelog:
-    name: CHANGELOG
+  publish:
+    name: Publish
+    needs: [build]
     runs-on: ubuntu-latest
-    # Only run this on pull requests.
-    if: github.event_name == 'pull_request'
-
+    # Only run on main repo releases .
+    if: github.repository == 'epwalsh/rust-cached-path' && github.event_name == 'release'
     steps:
-    # Note that checkout@v2 will not work with the git command below!
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
 
-    - name: Debugging info
-      run: |
-        git remote -v
+    - name: Install rust stable
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
 
-    - name: Check that CHANGELOG has been updated
-      run: |
-        # If this step fails, this means you haven't updated the CHANGELOG.md
-        # file with notes on your contribution.
-        git diff --name-only $(git merge-base origin/master HEAD) | grep '^CHANGELOG.md$' && echo "Thanks for helping keep our CHANGELOG up-to-date!"
+    - name: Log in to crates.io
+      uses: actions-rs/cargo@v1
+      with:
+        command: login
+        args: ${{ secrets.CARGO_TOKEN }}
+
+    - name: Publish
+      uses: actions-rs/cargo@v1
+      with:
+        command: publish

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::{Path, PathBuf};
-use tokio::fs;
 
 use crate::utils::now;
 use crate::Error;
@@ -53,9 +53,9 @@ impl Meta {
         meta_path
     }
 
-    pub(crate) async fn to_file(&self) -> Result<(), Error> {
+    pub(crate) fn to_file(&self) -> Result<(), Error> {
         let serialized = serde_json::to_string(self).unwrap();
-        fs::write(&self.meta_path, &serialized[..]).await?;
+        fs::write(&self.meta_path, &serialized[..])?;
         Ok(())
     }
 
@@ -66,23 +66,19 @@ impl Meta {
     /// ```rust
     /// use cached_path::{cached_path, Meta};
     ///
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<(), cached_path::Error> {
     /// let resource = "https://github.com/epwalsh/rust-cached-path/blob/master/README.md";
-    /// let path = cached_path(resource).await?;
-    /// let meta = Meta::from_cache(&path).await?;
+    /// let path = cached_path(resource).unwrap();
+    /// let meta = Meta::from_cache(&path).unwrap();
     /// assert_eq!(&meta.resource[..], resource);
-    /// # Ok(())
-    /// # }
     /// ```
-    pub async fn from_cache(resource_path: &Path) -> Result<Self, Error> {
+    pub fn from_cache(resource_path: &Path) -> Result<Self, Error> {
         let meta_path = Meta::meta_path(resource_path);
-        Meta::from_path(&meta_path).await
+        Meta::from_path(&meta_path)
     }
 
     /// Read `Meta` from a path.
-    pub(crate) async fn from_path(path: &Path) -> Result<Self, Error> {
-        let serialized = fs::read_to_string(path).await?;
+    pub(crate) fn from_path(path: &Path) -> Result<Self, Error> {
+        let serialized = fs::read_to_string(path)?;
         let meta: Meta = serde_json::from_str(&serialized[..]).unwrap();
         Ok(meta)
     }
