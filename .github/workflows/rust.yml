@@ -7,6 +7,8 @@ on:
   push:
     branches:
     - master
+  release:
+    types: [published]
   schedule:
     - cron: '0 10 * * *' # run at 10 AM UTC
 
@@ -32,10 +34,8 @@ jobs:
         git diff --name-only $(git merge-base origin/master HEAD) | grep '^CHANGELOG.md$' && echo "Thanks for helping keep our CHANGELOG up-to-date!"
 
   build:
-    name: build
-
+    name: Build
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
 
@@ -101,3 +101,28 @@ jobs:
       with:
         command: test
         args: --doc --all-features
+
+  publish:
+    name: Publish
+    needs: [build]
+    runs-on: ubuntu-latest
+    # Only run on main repo releases .
+    if: github.repository == 'epwalsh/rust-cached-path' && github.event_name == 'release'
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install rust stable
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Log in to crates.io
+      uses: actions-rs/cargo@v1
+      with:
+        command: login
+        args: ${{ secrets.CARGO_TOKEN }}
+
+    - name: Publish
+      uses: actions-rs/cargo@v1
+      with:
+        command: publish
