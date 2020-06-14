@@ -14,7 +14,7 @@ use cached_path::{Cache, Error};
 )]
 struct Opt {
     #[structopt()]
-    /// The resource paths.
+    /// The resource path.
     resource: String,
 
     #[structopt(long = "dir", env = "RUST_CACHED_PATH_ROOT")]
