@@ -184,7 +184,7 @@ impl Cache {
             info!("Treating {} as local file", resource);
             let path = PathBuf::from(resource);
             if !path.is_file() {
-                return Err(Error::ResourceNotFound(String::from(resource)).into());
+                return Err(Error::ResourceNotFound(String::from(resource)));
             } else {
                 return Ok(path);
             }
@@ -204,7 +204,7 @@ impl Cache {
                 return Ok(versions[0].resource_path.clone());
             } else {
                 error!("Offline mode is enabled but no cached versions of resource exist.");
-                return Err(Error::NoCachedVersions(String::from(resource)).into());
+                return Err(Error::NoCachedVersions(String::from(resource)));
             }
         } else if !versions.is_empty() && versions[0].is_fresh(self.freshness_lifetime) {
             // Oh hey, the latest version is still fresh! We can clean up any
