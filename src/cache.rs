@@ -39,7 +39,7 @@ impl CacheBuilder {
         CacheBuilder {
             config: Config {
                 dir: None,
-                client_builder: ClientBuilder::new(),
+                client_builder: ClientBuilder::new().timeout(None),
                 max_retries: 3,
                 max_backoff: 5000,
                 freshness_lifetime: None,
@@ -222,9 +222,10 @@ impl Cache {
 
         // Before going further we need to obtain a lock on the file to provide
         // parallel downloads of the same resource.
-        info!("Acquiring lock for cache of {}", resource);
+        debug!("Acquiring lock for cache of {}", resource);
         let lock_path = format!("{}.lock", path.to_str().unwrap());
         let filelock = FileLock::lock(&lock_path, true, true)?;
+        debug!("Lock acquired for {}", resource);
 
         if path.exists() {
             // Oh cool! The cache is up-to-date according to the ETAG.
@@ -310,14 +311,14 @@ impl Cache {
                         return Err(err);
                     }
                     if !err.is_retriable() {
-                        error!("Download failed for {} with fatal error", resource);
+                        error!("Download failed for {} with fatal error, {}", resource, err);
                         return Err(err);
                     }
                     retries += 1;
                     let retry_delay = self.get_retry_delay(retries);
                     warn!(
-                        "Download failed for {}, retrying in {} milliseconds...",
-                        resource, retry_delay
+                        "Download failed for {}: {}\nRetrying in {} milliseconds...",
+                        resource, err, retry_delay
                     );
                     thread::sleep(time::Duration::from_millis(u64::from(retry_delay)));
                 }
@@ -348,7 +349,7 @@ impl Cache {
         let tempfile = NamedTempFile::new_in(path.parent().unwrap())?;
         let mut tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path())?;
 
-        debug!("Starting download of {}", url);
+        info!("Starting download of {}", url);
 
         tempfile_write_handle.write_all(&response.bytes()?)?;
 

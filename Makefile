@@ -17,7 +17,7 @@ lint :
 
 .PHONY : test
 test :
-	cargo test
+	cargo test --all-features
 
 .PHONY : doc
 doc :
