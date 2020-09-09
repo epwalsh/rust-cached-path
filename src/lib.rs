@@ -67,7 +67,7 @@ mod meta;
 pub(crate) mod utils;
 
 pub use crate::cache::{Cache, CacheBuilder};
-pub use crate::error::{Error, ErrorKind};
+pub use crate::error::Error;
 pub use crate::meta::Meta;
 
 /// Get the cached path to a resource.
