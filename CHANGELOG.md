@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- Switched to using `thiserror` and `anyhow` for error handling.
+
 ## [v0.3.0](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.3.0) - 2020-06-13
 
 ### Changed

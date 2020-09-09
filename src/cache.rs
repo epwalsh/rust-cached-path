@@ -1,4 +1,3 @@
-use failure::ResultExt;
 use file_lock::FileLock;
 use glob::glob;
 use log::{debug, error, info, warn};
@@ -15,7 +14,7 @@ use std::time::{self, Duration};
 use tempfile::NamedTempFile;
 
 use crate::utils::hash_str;
-use crate::{Error, ErrorKind, Meta};
+use crate::{Error, Meta};
 
 /// Builder to facilitate creating [`Cache`](struct.Cache.html) objects.
 #[derive(Debug)]
@@ -105,7 +104,7 @@ impl CacheBuilder {
     /// If set to `true`, when the cached path of an HTTP resource is requested,
     /// the latest cached version is returned without checking for freshness.
     /// But if no cached versions exist, a
-    /// [`NoCachedVersions`](enum.ErrorKind.html#variant.NoCachedVersions) error is returned.
+    /// [`NoCachedVersions`](enum.Error.html#variant.NoCachedVersions) error is returned.
     pub fn offline(mut self, offline: bool) -> CacheBuilder {
         self.config.offline = offline;
         self
@@ -185,15 +184,15 @@ impl Cache {
             info!("Treating {} as local file", resource);
             let path = PathBuf::from(resource);
             if !path.is_file() {
-                return Err(ErrorKind::ResourceNotFound(String::from(resource)).into());
+                return Err(Error::ResourceNotFound(String::from(resource)));
             } else {
                 return Ok(path);
             }
         }
 
         // Otherwise we attempt to parse the URL.
-        let url = reqwest::Url::parse(resource)
-            .map_err(|_| ErrorKind::InvalidUrl(String::from(resource)))?;
+        let url =
+            reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl(String::from(resource)))?;
 
         // Find any existing cached versions of resource and check if they are still
         // fresh according to the `freshness_lifetime` setting.
@@ -205,7 +204,7 @@ impl Cache {
                 return Ok(versions[0].resource_path.clone());
             } else {
                 error!("Offline mode is enabled but no cached versions of resource exist.");
-                return Err(ErrorKind::NoCachedVersions(String::from(resource)).into());
+                return Err(Error::NoCachedVersions(String::from(resource)));
             }
         } else if !versions.is_empty() && versions[0].is_fresh(self.freshness_lifetime) {
             // Oh hey, the latest version is still fresh! We can clean up any
@@ -346,8 +345,7 @@ impl Cache {
         // First we make a temporary file and download the contents of the resource into it.
         // Otherwise if we wrote directly to the cache file and the download got
         // interrupted we could be left with a corrupted cache file.
-        let tempfile =
-            NamedTempFile::new_in(path.parent().unwrap()).context(ErrorKind::IoError(None))?;
+        let tempfile = NamedTempFile::new_in(path.parent().unwrap())?;
         let mut tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path())?;
 
         debug!("Starting download of {}", url);

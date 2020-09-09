@@ -1,4 +1,4 @@
-use exitfailure::ExitFailure;
+use anyhow::Result;
 use log::debug;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -48,7 +48,7 @@ struct Opt {
     offline: bool,
 }
 
-fn main() -> Result<(), ExitFailure> {
+fn main() -> Result<()> {
     env_logger::init();
     let opt = Opt::from_args();
 
