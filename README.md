@@ -19,7 +19,7 @@ and
 `cached-path` can be used as both a library and a command-line tool. To install `cached-path`
 as a command-line tool, run
 
-```rust
+```bash
 cargo install --features build-binary cached-path
 ```
 
