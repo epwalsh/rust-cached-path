@@ -2,6 +2,20 @@
 //! accessing both local and remote files. This can be used behind other APIs that need
 //! to access files agnostic to where they are located.
 //!
+//! This is based on
+//! [`allennlp/common/file_utils.py`](https://github.com/allenai/allennlp/blob/master/allennlp/common/file_utils.py)
+//! and
+//! [`transformers/file_utils.py`](https://github.com/huggingface/transformers/blob/master/src/transformers/file_utils.py).
+//!
+//! # Installation
+//!
+//! `cached-path` can be used as both a library and a command-line tool. To install `cached-path`
+//! as a command-line tool, run
+//!
+//! ```
+//! cargo install --features build-binary cached-path
+//! ```
+//!
 //! # Usage
 //!
 //! For remote resources, `cached-path` downloads and caches the resource, using the ETAG

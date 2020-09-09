@@ -9,7 +9,19 @@ The idea behind `cached-path` is to provide a unified, simple interface for
 accessing both local and remote files. This can be used behind other APIs that need
 to access files agnostic to where they are located.
 
-This is based on [`allennlp/common/file_utils.py`](https://github.com/allenai/allennlp/blob/master/allennlp/common/file_utils.py) and [`transformers/file_utils.py`](https://github.com/huggingface/transformers/blob/master/src/transformers/file_utils.py).
+This is based on
+[`allennlp/common/file_utils.py`](https://github.com/allenai/allennlp/blob/master/allennlp/common/file_utils.py)
+and
+[`transformers/file_utils.py`](https://github.com/huggingface/transformers/blob/master/src/transformers/file_utils.py).
+
+## Installation
+
+`cached-path` can be used as both a library and a command-line tool. To install `cached-path`
+as a command-line tool, run
+
+```rust
+cargo install --features build-binary cached-path
+```
 
 ## Usage
 
