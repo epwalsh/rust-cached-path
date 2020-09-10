@@ -241,10 +241,14 @@ impl Cache {
 
         // No up-to-date version cached, so we have to try downloading it.
         let meta = self.try_download_resource(resource, &url, &path, &etag)?;
+
         info!("New version of {} cached", resource);
-        meta.to_file()?;
+
         filelock.unlock()?;
+        debug!("Lock released for {}", resource);
+
         self.clean_up(&versions, Some(&meta.resource_path));
+
         Ok(meta.resource_path)
     }
 
@@ -353,9 +357,7 @@ impl Cache {
 
         tempfile_write_handle.write_all(&response.bytes()?)?;
 
-        debug!("Renaming temp file to cache location for {}", url);
-
-        fs::rename(tempfile.path(), &path)?;
+        debug!("Writing meta file");
 
         let meta = Meta::new(
             String::from(resource),
@@ -363,6 +365,11 @@ impl Cache {
             etag.clone(),
             self.freshness_lifetime,
         );
+        meta.to_file()?;
+
+        debug!("Renaming temp file to cache location for {}", url);
+
+        fs::rename(tempfile.path(), &path)?;
 
         Ok(meta)
     }

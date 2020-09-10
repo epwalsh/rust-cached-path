@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed default timeout of `None`.
+- `Meta` is now written to file before the tempfile of a downloaded resource is moved to its final cache location. This avoids a bug (albeit, an unlikely one) where the cache could be corrupted if writing the `Meta` to file fails.
 
 ## [v0.4.0-rc1](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.0-rc1) - 2020-09-09
 
