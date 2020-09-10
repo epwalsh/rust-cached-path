@@ -178,6 +178,9 @@ impl Cache {
     /// If the resource is local file, it's path is returned. If the resource is a static HTTP
     /// resource, it will cached locally and the path to the cache file will be returned.
     pub fn cached_path(&self, resource: &str) -> Result<PathBuf, Error> {
+        // Ensure root directory exists in case it has changed or been removed.
+        fs::create_dir_all(&self.dir)?;
+
         // If resource doesn't look like a URL, treat as local path, but return
         // an error if the path doesn't exist.
         if !resource.starts_with("http") {
