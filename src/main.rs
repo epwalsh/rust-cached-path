@@ -22,6 +22,10 @@ struct Opt {
     /// system temporary directory.
     dir: Option<PathBuf>,
 
+    #[structopt(long = "subdir")]
+    /// The subdirectory, relative to the cache root directory to use.
+    subdir: Option<String>,
+
     #[structopt(long = "timeout")]
     /// Set a request timeout.
     timeout: Option<u64>,
@@ -55,7 +59,7 @@ fn main() -> Result<()> {
     debug!("{:?}", opt);
 
     let cache = build_cache_from_opt(&opt)?;
-    let path = cache.cached_path(&opt.resource)?;
+    let path = cache.cached_path_in_subdir(&opt.resource, opt.subdir.as_deref())?;
     println!("{}", path.to_string_lossy());
 
     Ok(())
