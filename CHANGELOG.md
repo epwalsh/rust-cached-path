@@ -9,9 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v0.4.1](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.1) - 2020-09-10
 
+### Added
+
+- Added a method `Cache::cached_path_in_subdir` to use a specified subdirectory of the cache root.
+
 ### Fixed
 
-- Ensure cache directory exists every time `Cache::cached_path` is called.
+- Ensure cache directory exists every time `Cache::cached_path` or `Cache::cached_path_in_subdir` is called.
 
 ## [v0.4.0](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.0) - 2020-09-10
 
