@@ -1,4 +1,4 @@
-use file_lock::FileLock;
+use fs2::FileExt;
 use glob::glob;
 use log::{debug, error, info, warn};
 use rand::distributions::{Distribution, Uniform};
@@ -240,7 +240,12 @@ impl Cache {
         // parallel downloads of the same resource.
         debug!("Acquiring lock for cache of {}", resource);
         let lock_path = format!("{}.lock", path.to_str().unwrap());
-        let filelock = FileLock::lock(&lock_path, true, true)?;
+        let filelock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(lock_path)?;
+        filelock.lock_exclusive()?;
         debug!("Lock acquired for {}", resource);
 
         if path.exists() {
@@ -667,7 +672,7 @@ mod tests {
     #[test]
     fn test_cached_path_in_subdir() {
         // For debugging:
-        // let _ = env_logger::try_init();
+        let _ = env_logger::try_init();
 
         // Setup cache.
         let cache_dir = tempdir().unwrap();

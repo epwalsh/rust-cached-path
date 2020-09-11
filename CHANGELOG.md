@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- `cached-path` now compiles on Windows.
+
 ## [v0.4.1](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.1) - 2020-09-10
 
 ### Added
