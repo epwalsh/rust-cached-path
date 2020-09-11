@@ -7,7 +7,6 @@ use reqwest::header::ETAG;
 use std::default::Default;
 use std::env;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{self, Duration};
@@ -362,7 +361,7 @@ impl Cache {
     ) -> Result<Meta, Error> {
         debug!("Attempting connection to {}", url);
 
-        let response = self
+        let mut response = self
             .http_client
             .get(url.clone())
             .send()?
@@ -378,7 +377,7 @@ impl Cache {
 
         info!("Starting download of {}", url);
 
-        tempfile_write_handle.write_all(&response.bytes()?)?;
+        response.copy_to(&mut tempfile_write_handle)?;
 
         debug!("Writing meta file");
 
