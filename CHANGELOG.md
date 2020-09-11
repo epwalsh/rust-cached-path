@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- Updated the download method to stream the response into the target file.
+
 ## [v0.4.2](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.2) - 2020-09-11
 
 ### Fixed
