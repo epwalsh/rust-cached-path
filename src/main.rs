@@ -1,4 +1,4 @@
-use exitfailure::ExitFailure;
+use anyhow::Result;
 use log::debug;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -21,6 +21,10 @@ struct Opt {
     /// The cache directory. Defaults to a subdirectory named 'cache' of the default
     /// system temporary directory.
     dir: Option<PathBuf>,
+
+    #[structopt(long = "subdir")]
+    /// The subdirectory, relative to the cache root directory to use.
+    subdir: Option<String>,
 
     #[structopt(long = "timeout")]
     /// Set a request timeout.
@@ -48,14 +52,14 @@ struct Opt {
     offline: bool,
 }
 
-fn main() -> Result<(), ExitFailure> {
+fn main() -> Result<()> {
     env_logger::init();
     let opt = Opt::from_args();
 
     debug!("{:?}", opt);
 
     let cache = build_cache_from_opt(&opt)?;
-    let path = cache.cached_path(&opt.resource)?;
+    let path = cache.cached_path_in_subdir(&opt.resource, opt.subdir.as_deref())?;
     println!("{}", path.to_string_lossy());
 
     Ok(())
