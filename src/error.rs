@@ -16,6 +16,9 @@ pub enum Error {
     #[error("Offline mode is enabled but no cached versions of resouce exist ({0})")]
     NoCachedVersions(String),
 
+    #[error("Cache is corrupted ({0})")]
+    CacheCorrupted(String),
+
     /// Any IO error that could arise while attempting to cache a remote resource.
     #[error("An IO error occurred")]
     IoError(#[from] std::io::Error),

@@ -75,14 +75,14 @@
 
 use std::path::PathBuf;
 
+pub(crate) mod archives;
 mod cache;
 mod error;
-mod meta;
+pub(crate) mod meta;
 pub(crate) mod utils;
 
-pub use crate::cache::{Cache, CacheBuilder};
+pub use crate::cache::{Cache, CacheBuilder, Options};
 pub use crate::error::Error;
-pub use crate::meta::Meta;
 
 /// Get the cached path to a resource.
 ///

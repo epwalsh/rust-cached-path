@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added option to automatically extract archives.
 - Added integration tests.
+
+### Changed
+
+- `Meta` struct is no longer public.
 
 ## [v0.4.2](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.3) - 2020-09-11
 
