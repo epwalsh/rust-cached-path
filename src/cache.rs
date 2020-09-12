@@ -671,7 +671,7 @@ mod tests {
     #[test]
     fn test_cached_path_in_subdir() {
         // For debugging:
-        let _ = env_logger::try_init();
+        // let _ = env_logger::try_init();
 
         // Setup cache.
         let cache_dir = tempdir().unwrap();
