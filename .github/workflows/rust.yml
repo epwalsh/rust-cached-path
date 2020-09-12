@@ -85,12 +85,26 @@ jobs:
         command: clippy
         args: --all-targets --all-features -- -D warnings
 
+    - name: Build
+      if: always()
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --all-features
+
     - name: Run unit tests
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: --lib --all-features
+
+    - name: Run integration tests
+      if: always()
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --test cli
 
     - name: Run doc tests
       if: always()
