@@ -906,4 +906,37 @@ mod tests {
         let sample_file_path = path.join("dummy.txt");
         assert!(sample_file_path.is_file());
     }
+
+    #[test]
+    fn test_extract_in_subdir() {
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::builder()
+            .dir(cache_dir.path().to_owned())
+            .build()
+            .unwrap();
+
+        let options = Options::new(Some("target"), true);
+        let resource: PathBuf = [
+            ".",
+            "test_fixtures",
+            "utf-8_sample",
+            "archives",
+            "utf-8.tar.gz",
+        ]
+        .iter()
+        .collect();
+
+        let path = cache
+            .cached_path_with_options(resource.to_str().unwrap(), &options)
+            .unwrap();
+        assert!(path.is_dir());
+        assert!(path.to_str().unwrap().ends_with("-extracted"));
+        assert!(path.parent().unwrap().to_str().unwrap().ends_with("target"));
+        assert!(path
+            .to_str()
+            .unwrap()
+            .starts_with(cache_dir.path().to_str().unwrap()));
+        let sample_file_path = path.join("dummy.txt");
+        assert!(sample_file_path.is_file());
+    }
 }
