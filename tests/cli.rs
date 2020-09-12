@@ -32,19 +32,19 @@ fn test_remote_file() -> Result<(), Box<dyn std::error::Error>> {
     assert!(path.is_file());
 
     // Ensure cached version exactly matches local version.
-    let cached_file = fs::File::open(&path)?;
-    let cached_bytes: Result<Vec<u8>, _> = cached_file.bytes().collect();
-    let cached_bytes = cached_bytes.unwrap();
+    let mut cached_file = fs::File::open(&path)?;
+    let mut cached_contents = String::new();
+    cached_file.read_to_string(&mut cached_contents)?;
 
     let local_path: PathBuf = [".", "test_fixtures", "utf-8_sample", "utf-8_sample.txt"]
         .iter()
         .collect();
     assert!(local_path.is_file());
-    let local_file = fs::File::open(local_path)?;
-    let local_bytes: Result<Vec<u8>, _> = local_file.bytes().collect();
-    let local_bytes = local_bytes.unwrap();
+    let mut local_file = fs::File::open(local_path)?;
+    let mut local_contents = String::new();
+    local_file.read_to_string(&mut local_contents)?;
 
-    assert!(cached_bytes == local_bytes);
+    assert_eq!(local_contents, cached_contents);
 
     Ok(())
 }
