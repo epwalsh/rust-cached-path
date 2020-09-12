@@ -44,6 +44,10 @@ fn test_remote_file() -> Result<(), Box<dyn std::error::Error>> {
     let mut local_contents = String::new();
     local_file.read_to_string(&mut local_contents)?;
 
+    // On Windows, git will automatically convert '\n' line-endings to '\r\n'.
+    // So we change those back.
+    let local_contents = local_contents.replace("\r\n", "\n");
+
     assert_eq!(local_contents, cached_contents);
 
     Ok(())
