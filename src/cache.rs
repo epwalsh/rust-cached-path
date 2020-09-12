@@ -244,11 +244,13 @@ impl Cache {
 
         if let Some(dirpath) = extraction_dir {
             // Extract archive.
+            debug!("Treating {} as archive", resource);
 
             fs::create_dir_all(&dirpath.parent().unwrap())?;
 
             // Need to acquire a lock here to make sure we don't try to extract
             // the same archive in parallel from multiple processes.
+            debug!("Acquiring lock on extraction directory for {}", resource);
             let lock_path = format!("{}.lock", dirpath.to_str().unwrap());
             let filelock = OpenOptions::new()
                 .read(true)
@@ -256,13 +258,16 @@ impl Cache {
                 .create(true)
                 .open(lock_path)?;
             filelock.lock_exclusive()?;
+            debug!("Lock on extraction directory acquired for {}", resource);
 
             if !dirpath.is_dir() {
+                info!("Extracting {} to {:?}", resource, dirpath);
                 let format = ArchiveFormat::parse_from_extension(resource)?;
                 extract_archive(&cached_path, &dirpath, &format)?;
             }
 
             filelock.unlock()?;
+            debug!("Lock released on extraction directory for {}", resource);
 
             Ok(dirpath)
         } else {
@@ -828,8 +833,6 @@ mod tests {
         let cache_dir = tempdir().unwrap();
         let cache = Cache::builder()
             .dir(cache_dir.path().to_owned())
-            .freshness_lifetime(300)
-            .only_keep_latest(true)
             .build()
             .unwrap();
 
@@ -870,5 +873,37 @@ mod tests {
         // Ensure the contents of the file are correct.
         let contents = std::fs::read_to_string(&path).unwrap();
         assert_eq!(&contents[..], "Hello, World!");
+    }
+
+    #[test]
+    fn test_extract() {
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::builder()
+            .dir(cache_dir.path().to_owned())
+            .build()
+            .unwrap();
+
+        let options = Options::new(None, true);
+        let resource: PathBuf = [
+            ".",
+            "test_fixtures",
+            "utf-8_sample",
+            "archives",
+            "utf-8.tar.gz",
+        ]
+        .iter()
+        .collect();
+
+        let path = cache
+            .cached_path_with_options(resource.to_str().unwrap(), &options)
+            .unwrap();
+        assert!(path.is_dir());
+        assert!(path.to_str().unwrap().ends_with("-extracted"));
+        assert!(path
+            .to_str()
+            .unwrap()
+            .starts_with(cache_dir.path().to_str().unwrap()));
+        let sample_file_path = path.join("dummy.txt");
+        assert!(sample_file_path.is_file());
     }
 }
