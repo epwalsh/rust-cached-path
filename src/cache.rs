@@ -175,7 +175,7 @@ pub struct Options {
 impl Options {
     pub fn new(subdir: Option<&str>, extract: bool) -> Self {
         Self {
-            subdir: subdir.map(|dir| String::from(dir)),
+            subdir: subdir.map(String::from),
             extract,
         }
     }

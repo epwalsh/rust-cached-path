@@ -1,5 +1,8 @@
 use crate::error::Error;
+use flate2::read::GzDecoder;
+use std::fs::File;
 use std::path::Path;
+use tar::Archive;
 
 /// Supported archive types.
 pub(crate) enum ArchiveFormat {
@@ -12,7 +15,7 @@ impl ArchiveFormat {
         if resource.ends_with(".tar.gz") {
             return Ok(Self::TarGz);
         }
-        return Err(Error::ExtractionError("unsupported archive format".into()));
+        Err(Error::ExtractionError("unsupported archive format".into()))
     }
 }
 
@@ -21,7 +24,13 @@ pub(crate) fn extract_archive<P: AsRef<Path>>(
     target: P,
     format: &ArchiveFormat,
 ) -> Result<(), Error> {
-    // TODO: extract to temp directory in same parent directory of `target`, then rename
-    // to target if successful.
-    unimplemented!();
+    match format {
+        ArchiveFormat::TarGz => {
+            let tar_gz = File::open(path)?;
+            let tar = GzDecoder::new(tar_gz);
+            let mut archive = Archive::new(tar);
+            archive.unpack(target)?;
+            Ok(())
+        }
+    }
 }

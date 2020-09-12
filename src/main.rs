@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use structopt::StructOpt;
 
-use cached_path::{Cache, Error};
+use cached_path::{Cache, Error, Options};
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -25,6 +25,10 @@ struct Opt {
     #[structopt(long = "subdir")]
     /// The subdirectory, relative to the cache root directory to use.
     subdir: Option<String>,
+
+    #[structopt(long = "extract")]
+    /// Extract the resource as an archive.
+    extract: bool,
 
     #[structopt(long = "timeout")]
     /// Set a request timeout.
@@ -59,7 +63,8 @@ fn main() -> Result<()> {
     debug!("{:?}", opt);
 
     let cache = build_cache_from_opt(&opt)?;
-    let path = cache.cached_path_in_subdir(&opt.resource, opt.subdir.as_deref())?;
+    let options = Options::new(opt.subdir.as_deref(), opt.extract);
+    let path = cache.cached_path_with_options(&opt.resource, &options)?;
     println!("{}", path.to_string_lossy());
 
     Ok(())
