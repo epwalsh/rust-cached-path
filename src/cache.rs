@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{self, Duration};
 use tempfile::NamedTempFile;
 
-use crate::archives::extract_archive;
+use crate::archives::{extract_archive, ArchiveFormat};
 use crate::utils::hash_str;
 use crate::{meta::Meta, Error};
 
@@ -164,8 +164,11 @@ pub struct Cache {
 }
 
 /// Options to use with [`Cache::cached_path_with_options`](struct.Cache.html#method.cached_with_options).
+#[derive(Default)]
 pub struct Options {
+    /// An optional subdirectory (relative to the cache root) to use.
     pub subdir: Option<String>,
+    /// Automatically extract the resource, assuming the resource an archive.
     pub extract: bool,
 }
 
@@ -194,27 +197,7 @@ impl Cache {
     /// If the resource is local file, it's path is returned. If the resource is a static HTTP
     /// resource, it will cached locally and the path to the cache file will be returned.
     pub fn cached_path(&self, resource: &str) -> Result<PathBuf, Error> {
-        Ok(self.cached_path_in_subdir(resource, None)?)
-    }
-
-    /// A convenience method to get the cached path to a resource using the given
-    /// cache subdirectory (relative to the cache root).
-    ///
-    /// This is equivalent to:
-    ///
-    /// ```rust,no_run
-    /// # let cache = Cache::new();
-    /// # let subdir = "target";
-    /// # let resource = "README.md";
-    /// let options = Options::new(Some(subdir), false);
-    /// let path = cache.cached_path_with_options(resource, &options).unwrap();
-    /// ```
-    pub fn cached_path_in_subdir(
-        &self,
-        resource: &str,
-        subdir: Option<&str>,
-    ) -> Result<PathBuf, Error> {
-        let options = Options::new(subdir, false);
+        let options = Options::default();
         self.cached_path_with_options(resource, &options)
     }
 
@@ -275,7 +258,8 @@ impl Cache {
             filelock.lock_exclusive()?;
 
             if !dirpath.is_dir() {
-                extract_archive(&cached_path, &dirpath)?;
+                let format = ArchiveFormat::parse_from_extension(resource)?;
+                extract_archive(&cached_path, &dirpath, &format)?;
             }
 
             filelock.unlock()?;
@@ -284,6 +268,28 @@ impl Cache {
         } else {
             Ok(cached_path)
         }
+    }
+
+    /// A convenience method to get the cached path to a resource using the given
+    /// cache subdirectory (relative to the cache root).
+    ///
+    /// This is equivalent to:
+    ///
+    /// ```rust,no_run
+    /// # use cached_path::{Cache, Options};
+    /// # let cache = Cache::new().unwrap();
+    /// # let subdir = "target";
+    /// # let resource = "README.md";
+    /// let options = Options::new(Some(subdir), false);
+    /// let path = cache.cached_path_with_options(resource, &options).unwrap();
+    /// ```
+    pub fn cached_path_in_subdir(
+        &self,
+        resource: &str,
+        subdir: Option<&str>,
+    ) -> Result<PathBuf, Error> {
+        let options = Options::new(subdir, false);
+        self.cached_path_with_options(resource, &options)
     }
 
     fn fetch_remote_resource(&self, resource: &str, subdir: Option<&str>) -> Result<Meta, Error> {

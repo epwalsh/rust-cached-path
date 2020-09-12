@@ -86,13 +86,10 @@ pub use crate::error::Error;
 
 /// Get the cached path to a resource.
 ///
-/// If the resource is local file, it's path is returned. If the resource is a static HTTP
-/// resource, it will cached locally and the path to the cache file will be returned.
-///
-/// Internally this function just creates a default [`Cache`](struct.Cache.html) object and then
-/// calls [`Cache::cached_path`](struct.Cache.html#method.cached_path).
+/// This is equivalent to calling [`Cache::cached_path`](struct.Cache.html#method.cached_path)
+/// with a temporary [`Cache`](struct.Cache.html) object.
 /// Therefore if you're going to be calling this function multiple times,
-/// it's probably more efficient to create and use a single `Cache` instead.
+/// it's more efficient to create and use a single `Cache` instead.
 pub fn cached_path(resource: &str) -> Result<PathBuf, Error> {
     let cache = Cache::builder().build()?;
     Ok(cache.cached_path(resource)?)
