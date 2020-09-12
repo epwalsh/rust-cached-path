@@ -36,7 +36,11 @@ fn test_remote_file() -> Result<(), Box<dyn std::error::Error>> {
     let cached_bytes: Result<Vec<u8>, _> = cached_file.bytes().collect();
     let cached_bytes = cached_bytes.unwrap();
 
-    let local_file = fs::File::open("test_fixtures/utf-8_sample/utf-8_sample.txt")?;
+    let local_path: PathBuf = [".", "test_fixtures", "utf-8_sample", "utf-8_sample.txt"]
+        .iter()
+        .collect();
+    assert!(local_path.is_file());
+    let local_file = fs::File::open(local_path)?;
     let local_bytes: Result<Vec<u8>, _> = local_file.bytes().collect();
     let local_bytes = local_bytes.unwrap();
 
