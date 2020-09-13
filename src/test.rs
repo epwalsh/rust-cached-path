@@ -144,7 +144,6 @@ fn test_cached_path() {
     let mut cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
         .freshness_lifetime(300)
-        .only_keep_latest(true)
         .build()
         .unwrap();
 
@@ -235,10 +234,6 @@ fn test_cached_path() {
     // Ensure the file and meta exist.
     assert!(new_path.is_file());
     assert!(Meta::meta_path(&new_path).is_file());
-
-    // Ensure the old version was cleaned up.
-    assert!(!path.is_file());
-    assert!(!Meta::meta_path(&path).is_file());
 
     // Ensure the contents of the file are correct.
     let new_contents = std::fs::read_to_string(&new_path).unwrap();

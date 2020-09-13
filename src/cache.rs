@@ -30,7 +30,6 @@ struct Config {
     max_backoff: u32,
     freshness_lifetime: Option<u64>,
     offline: bool,
-    only_keep_latest: bool,
 }
 
 impl CacheBuilder {
@@ -44,7 +43,6 @@ impl CacheBuilder {
                 max_backoff: 5000,
                 freshness_lifetime: None,
                 offline: false,
-                only_keep_latest: false,
             },
         }
     }
@@ -110,15 +108,6 @@ impl CacheBuilder {
         self
     }
 
-    /// Remove older cached versions of a resource when a newer version is cached.
-    ///
-    /// In general, setting this to `true` is not recommended because it could result
-    /// in deleting a cached file that another process is trying to read.
-    pub fn only_keep_latest(mut self, only_keep_latest: bool) -> CacheBuilder {
-        self.config.only_keep_latest = only_keep_latest;
-        self
-    }
-
     /// Build the `Cache` object.
     pub fn build(self) -> Result<Cache, Error> {
         let dir = self.config.dir.unwrap_or_else(|| {
@@ -137,7 +126,6 @@ impl CacheBuilder {
             max_backoff: self.config.max_backoff,
             freshness_lifetime: self.config.freshness_lifetime,
             offline: self.config.offline,
-            only_keep_latest: self.config.only_keep_latest,
         })
     }
 }
@@ -197,12 +185,6 @@ pub struct Cache {
     ///
     /// If set to `true`, no HTTP calls will be made.
     pub offline: bool,
-    /// Automatically evict old versions of a cached resource.
-    ///
-    /// Use this with caution! When cleaning out old versions of a cached resource,
-    /// there is no way to tell if other processes have open file handles to any of
-    /// those.
-    pub only_keep_latest: bool,
     http_client: Client,
 }
 
@@ -382,7 +364,6 @@ impl Cache {
         if self.offline {
             if !versions.is_empty() {
                 info!("Found existing cached version of {}", resource);
-                self.clean_up(&versions, Some(&versions[0].resource_path));
                 return Ok(versions[0].clone());
             } else {
                 error!("Offline mode is enabled but no cached versions of resource exist.");
@@ -392,7 +373,6 @@ impl Cache {
             // Oh hey, the latest version is still fresh! We can clean up any
             // older versions and return the latest.
             info!("Latest cached version of {} is still fresh", resource);
-            self.clean_up(&versions, Some(&versions[0].resource_path));
             return Ok(versions[0].clone());
         }
 
@@ -420,9 +400,6 @@ impl Cache {
             // dangling ones.
             info!("Cached version of {} is up-to-date", resource);
             filelock.unlock()?;
-            if !versions.is_empty() {
-                self.clean_up(&versions, Some(&path));
-            }
             return Ok(Meta::from_cache(&path)?);
         }
 
@@ -433,8 +410,6 @@ impl Cache {
 
         filelock.unlock()?;
         debug!("Lock released for {}", resource);
-
-        self.clean_up(&versions, Some(&meta.resource_path));
 
         Ok(meta)
     }
@@ -456,28 +431,6 @@ impl Cache {
         existing_meta
             .sort_unstable_by(|a, b| b.creation_time.partial_cmp(&a.creation_time).unwrap());
         existing_meta
-    }
-
-    fn clean_up(&self, versions: &[Meta], keep: Option<&Path>) {
-        if self.only_keep_latest {
-            for meta in versions {
-                if let Some(path) = keep {
-                    if path == meta.resource_path {
-                        continue;
-                    }
-                }
-                debug!(
-                    "Removing old version at {}",
-                    meta.resource_path.to_str().unwrap()
-                );
-                fs::remove_file(&meta.meta_path).ok();
-                fs::remove_file(&meta.resource_path).ok();
-                let extraction_path = meta.get_extraction_path();
-                if extraction_path.is_dir() {
-                    fs::remove_dir_all(extraction_path).ok();
-                }
-            }
-        }
     }
 
     fn get_retry_delay(&self, retries: u32) -> u32 {
