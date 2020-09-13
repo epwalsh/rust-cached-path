@@ -97,6 +97,7 @@ use std::path::PathBuf;
 
 pub(crate) mod archives;
 mod cache;
+pub(crate) mod client;
 mod error;
 pub(crate) mod meta;
 pub(crate) mod utils;

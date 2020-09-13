@@ -1,3 +1,7 @@
+use crate::archives::{extract_archive, ArchiveFormat};
+use crate::client::Client;
+use crate::utils::hash_str;
+use crate::{meta::Meta, Error};
 use fs2::FileExt;
 use glob::glob;
 use log::{debug, error, info, warn};
@@ -10,12 +14,6 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{self, Duration};
 use tempfile::NamedTempFile;
-
-use crate::archives::{extract_archive, ArchiveFormat};
-use crate::utils::hash_str;
-use crate::{meta::Meta, Error};
-
-const ETAG: &str = "ETag";
 
 /// Builder to facilitate creating [`Cache`](struct.Cache.html) objects.
 #[derive(Debug)]
@@ -112,8 +110,7 @@ impl CacheBuilder {
         fs::create_dir_all(&dir)?;
         Ok(Cache {
             dir,
-            timeout: self.config.timeout,
-            connect_timeout: self.config.connect_timeout,
+            client: Client::new(self.config.timeout, self.config.connect_timeout),
             max_retries: self.config.max_retries,
             max_backoff: self.config.max_backoff,
             freshness_lifetime: self.config.freshness_lifetime,
@@ -159,28 +156,26 @@ impl Options {
 }
 
 /// Fetches and manages resources in a local cache directory.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Cache {
     /// The root directory of the cache.
     pub dir: PathBuf,
-    /// An optional timeout for downloading remote resources.
-    pub timeout: Option<Duration>,
-    /// An optional timeout for establishing a connection to remote resources.
-    pub connect_timeout: Option<Duration>,
+    /// The HTTP client used to fetch remote resources.
+    client: Client,
     /// The maximum number of times to retry downloading a remote resource.
-    pub max_retries: u32,
+    max_retries: u32,
     /// The maximum amount of time (in milliseconds) to wait before retrying a download.
-    pub max_backoff: u32,
+    max_backoff: u32,
     /// An optional freshness lifetime (in seconds).
     ///
     /// If set, resources that were cached within the past `freshness_lifetime` seconds
     /// will always be regarded as fresh, and so the ETag of the corresponding remote
     /// resource won't be checked.
-    pub freshness_lifetime: Option<u64>,
+    freshness_lifetime: Option<u64>,
     /// Offline mode.
     ///
     /// If set to `true`, no HTTP calls will be made.
-    pub offline: bool,
+    offline: bool,
 }
 
 impl Cache {
@@ -466,17 +461,6 @@ impl Cache {
         }
     }
 
-    fn check_response(response: &ureq::Response) -> Result<(), Error> {
-        if response.error() {
-            match response.synthetic_error() {
-                Some(err) => Err(Error::from(err)),
-                None => Err(Error::HttpStatusError(response.status())),
-            }
-        } else {
-            Ok(())
-        }
-    }
-
     fn download_resource(
         &self,
         resource: &str,
@@ -485,19 +469,11 @@ impl Cache {
     ) -> Result<Meta, Error> {
         debug!("Attempting connection to {}", resource);
 
-        let mut request = ureq::get(resource);
-        if let Some(timeout) = self.connect_timeout {
-            request.timeout_connect(timeout.as_millis() as u64);
-        }
-        if let Some(timeout) = self.timeout {
-            request.timeout(timeout);
-        }
-        let response = request.call();
-        Self::check_response(&response)?;
+        let read_handle = self.client.download_resource(resource)?;
 
         debug!("Opened connection to {}", resource);
 
-        // First we make a temporary file and download the contents of the resource into it.
+        // We make a temporary file and download the contents of the resource into it.
         // Otherwise if we wrote directly to the cache file and the download got
         // interrupted we could be left with a corrupted cache file.
         let tempfile = NamedTempFile::new_in(path.parent().unwrap())?;
@@ -505,12 +481,11 @@ impl Cache {
 
         info!("Starting download of {}", resource);
 
-        let mut buf_reader = BufReader::new(response.into_reader());
+        let mut buf_reader = BufReader::new(read_handle);
         let mut buf_writer = BufWriter::new(tempfile_write_handle);
         let bytes_read = io::copy(&mut buf_reader, &mut buf_writer)?;
 
         debug!("Downloaded {} bytes", bytes_read);
-
         debug!("Writing meta file");
 
         let meta = Meta::new(
@@ -556,16 +531,7 @@ impl Cache {
 
     fn get_etag(&self, resource: &str) -> Result<Option<String>, Error> {
         debug!("Fetching ETAG for {}", resource);
-        let mut request = ureq::head(resource);
-        if let Some(timeout) = self.connect_timeout {
-            request.timeout_connect(timeout.as_millis() as u64);
-        }
-        if let Some(timeout) = self.timeout {
-            request.timeout(timeout);
-        }
-        let response = request.call();
-        Self::check_response(&response)?;
-        Ok(response.header(ETAG).map(String::from))
+        self.client.get_etag(resource)
     }
 
     pub(crate) fn resource_to_filepath(

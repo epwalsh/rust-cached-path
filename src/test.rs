@@ -140,7 +140,7 @@ fn test_cached_path() {
 
     // Setup cache.
     let cache_dir = tempdir().unwrap();
-    let mut cache = Cache::builder()
+    let cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
         .freshness_lifetime(300)
         .build()
@@ -192,7 +192,12 @@ fn test_cached_path() {
     // Now expire the resource to continue testing.
     meta.expires = None;
     meta.to_file().unwrap();
-    cache.freshness_lifetime = None;
+
+    // New cache with freshness lifetime of None.
+    let cache = Cache::builder()
+        .dir(cache_dir.path().to_owned())
+        .build()
+        .unwrap();
 
     // After calling again when the resource is no longer fresh, the ETAG
     // should have been queried again with HEAD, but the resource should not have been
