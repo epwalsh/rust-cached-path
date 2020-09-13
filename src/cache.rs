@@ -1,5 +1,6 @@
 use fs2::FileExt;
 use glob::glob;
+use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error, info, warn};
 use rand::distributions::{Distribution, Uniform};
 use reqwest::blocking::{Client, ClientBuilder};
@@ -172,19 +173,19 @@ pub struct Cache {
     /// The root directory of the cache.
     pub dir: PathBuf,
     /// The maximum number of times to retry downloading a remote resource.
-    pub max_retries: u32,
+    max_retries: u32,
     /// The maximum amount of time (in milliseconds) to wait before retrying a download.
-    pub max_backoff: u32,
+    max_backoff: u32,
     /// An optional freshness lifetime (in seconds).
     ///
     /// If set, resources that were cached within the past `freshness_lifetime` seconds
     /// will always be regarded as fresh, and so the ETag of the corresponding remote
     /// resource won't be checked.
-    pub freshness_lifetime: Option<u64>,
+    freshness_lifetime: Option<u64>,
     /// Offline mode.
     ///
     /// If set to `true`, no HTTP calls will be made.
-    pub offline: bool,
+    offline: bool,
     http_client: Client,
 }
 
@@ -497,11 +498,17 @@ impl Cache {
         // Otherwise if we wrote directly to the cache file and the download got
         // interrupted we could be left with a corrupted cache file.
         let tempfile = NamedTempFile::new_in(path.parent().unwrap())?;
-        let mut tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path())?;
+        let tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path())?;
 
         info!("Starting download of {}", url);
 
-        response.copy_to(&mut tempfile_write_handle)?;
+        let spinner = ProgressBar::new_spinner();
+        spinner.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner} {bytes} [{bytes_per_sec}, {elapsed}]"),
+        );
+        spinner.set_draw_delta(100_000);
+        response.copy_to(&mut spinner.wrap_write(tempfile_write_handle))?;
 
         debug!("Writing meta file");
 
