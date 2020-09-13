@@ -74,3 +74,24 @@ fn test_extract_remote_file() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn test_extract_local_file() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("cached-path")?;
+
+    cmd.arg("--extract")
+        .arg("test_fixtures/utf-8_sample/archives/utf-8.tar.gz");
+    let result = cmd.assert().success();
+    let output = result.get_output();
+    let mut stdout = String::from_utf8(output.stdout.clone()).unwrap();
+    // remove newline at the end.
+    stdout.pop();
+    let path = PathBuf::from(stdout);
+    println!("{:?}", path);
+    assert!(path.is_dir());
+    assert!(path.join("dummy.txt").is_file());
+    assert!(path.join("folder").is_dir());
+    assert!(path.join("folder").join("utf-8_sample.txt").is_file());
+
+    Ok(())
+}
