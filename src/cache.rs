@@ -262,9 +262,16 @@ impl Cache {
             if options.extract {
                 // If we need to extract, we extract into a unique subdirectory of the cache directory
                 // so as not to mess with the file system outside of the cache directory.
+                // To make sure that we use a unique directory for each "version" of this local
+                // resource, we treat the last modified time as an ETag.
+                let resource_last_modified = fs::metadata(resource)?
+                    .modified()
+                    .ok()
+                    .and_then(|sys_time| sys_time.elapsed().ok())
+                    .map(|duration| format!("{}", duration.as_secs()));
                 extraction_dir = Some(self.resource_to_filepath(
                     resource,
-                    &None,
+                    &resource_last_modified,
                     options.subdir.as_deref(),
                     Some("-extracted"),
                 ));
@@ -299,41 +306,7 @@ impl Cache {
             filelock.lock_exclusive()?;
             debug!("Lock on extraction directory acquired for {}", resource);
 
-            let should_extract = if !dirpath.is_dir() {
-                true
-            } else {
-                // If the extraction directory already exists, compare the last modified
-                // time of the extraction dir against the cached resource file.
-                let cached_resource_last_modified = fs::metadata(&cached_path)?.modified().ok();
-                let extracted_dir_last_modified = fs::metadata(&dirpath)?.modified().ok();
-                match (cached_resource_last_modified, extracted_dir_last_modified) {
-                    (Some(t1), Some(t2)) => {
-                        // If the last mod time of the cached resource is later (more recent) than
-                        // the last mod time of the extraction directory, we should extract again.
-                        // This works here because `duration_since` gives an Err if t1 is later than t2.
-                        t2.duration_since(t1).is_err()
-                    }
-                    _ => true,
-                }
-                // NOTE: comparing system times like this is a little sketchy because these time measurements
-                // are not necessarily monotonic. It's actually possible for the modification
-                // time on the extraction directory to be earlier than the modification time of the
-                // archive file, even if the archive file was created before the extraction
-                // directory in reality (which should always be the case, unless the archive
-                // file was modified between separate calls to `cached_path_with_options()`).
-                //
-                // In practice this anamoly should be rare though, especially when the extraction
-                // process takes a relatively long time...
-                //
-                // The longer the extraction process takes, the more time there will be between
-                // when the archive was created and when the extraction directory will be created,
-                // and hence the smaller the probability of the times of these events not being monotonic.
-                //
-                // On the other hand, when the extraction time is REALLY fast, there will be a higher probability
-                // of the times not being monotonic, but it's not such a big deal if we decide
-                // to extract again since the extraction process is fast.
-            };
-            if should_extract {
+            if !dirpath.is_dir() {
                 info!("Extracting {} to {:?}", resource, dirpath);
                 let format = ArchiveFormat::parse_from_extension(resource)?;
                 extract_archive(&cached_path, &dirpath, &format)?;
