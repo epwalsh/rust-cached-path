@@ -2,11 +2,10 @@ use fs2::FileExt;
 use glob::glob;
 use log::{debug, error, info, warn};
 use rand::distributions::{Distribution, Uniform};
-use reqwest::blocking::{Client, ClientBuilder};
-use reqwest::header::ETAG;
 use std::default::Default;
 use std::env;
 use std::fs::{self, OpenOptions};
+use std::io::{self, BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{self, Duration};
@@ -15,6 +14,8 @@ use tempfile::NamedTempFile;
 use crate::archives::{extract_archive, ArchiveFormat};
 use crate::utils::hash_str;
 use crate::{meta::Meta, Error};
+
+const ETAG: &str = "ETag";
 
 /// Builder to facilitate creating [`Cache`](struct.Cache.html) objects.
 #[derive(Debug)]
@@ -25,7 +26,8 @@ pub struct CacheBuilder {
 #[derive(Debug)]
 struct Config {
     dir: Option<PathBuf>,
-    client_builder: ClientBuilder,
+    timeout: Option<Duration>,
+    connect_timeout: Option<Duration>,
     max_retries: u32,
     max_backoff: u32,
     freshness_lifetime: Option<u64>,
@@ -38,18 +40,14 @@ impl CacheBuilder {
         CacheBuilder {
             config: Config {
                 dir: None,
-                client_builder: ClientBuilder::new().timeout(None),
+                timeout: None,
+                connect_timeout: None,
                 max_retries: 3,
                 max_backoff: 5000,
                 freshness_lifetime: None,
                 offline: false,
             },
         }
-    }
-
-    /// Construct a new `CacheBuilder` with a `ClientBuilder`.
-    pub fn with_client_builder(client_builder: ClientBuilder) -> CacheBuilder {
-        CacheBuilder::new().client_builder(client_builder)
     }
 
     /// Set the cache location. This can be set through the environment
@@ -60,21 +58,15 @@ impl CacheBuilder {
         self
     }
 
-    /// Set the `ClientBuilder`.
-    pub fn client_builder(mut self, client_builder: ClientBuilder) -> CacheBuilder {
-        self.config.client_builder = client_builder;
-        self
-    }
-
     /// Enable a request timeout.
     pub fn timeout(mut self, timeout: Duration) -> CacheBuilder {
-        self.config.client_builder = self.config.client_builder.timeout(timeout);
+        self.config.timeout = Some(timeout);
         self
     }
 
     /// Enable a timeout for the connect phase of each HTTP request.
     pub fn connect_timeout(mut self, timeout: Duration) -> CacheBuilder {
-        self.config.client_builder = self.config.client_builder.connect_timeout(timeout);
+        self.config.connect_timeout = Some(timeout);
         self
     }
 
@@ -117,11 +109,11 @@ impl CacheBuilder {
                 env::temp_dir().join("cache/")
             }
         });
-        let http_client = self.config.client_builder.build()?;
         fs::create_dir_all(&dir)?;
         Ok(Cache {
             dir,
-            http_client,
+            timeout: self.config.timeout,
+            connect_timeout: self.config.connect_timeout,
             max_retries: self.config.max_retries,
             max_backoff: self.config.max_backoff,
             freshness_lifetime: self.config.freshness_lifetime,
@@ -171,6 +163,10 @@ impl Options {
 pub struct Cache {
     /// The root directory of the cache.
     pub dir: PathBuf,
+    /// An optional timeout for downloading remote resources.
+    pub timeout: Option<Duration>,
+    /// An optional timeout for establishing a connection to remote resources.
+    pub connect_timeout: Option<Duration>,
     /// The maximum number of times to retry downloading a remote resource.
     pub max_retries: u32,
     /// The maximum amount of time (in milliseconds) to wait before retrying a download.
@@ -185,7 +181,6 @@ pub struct Cache {
     ///
     /// If set to `true`, no HTTP calls will be made.
     pub offline: bool,
-    http_client: Client,
 }
 
 impl Cache {
@@ -347,10 +342,6 @@ impl Cache {
     }
 
     fn fetch_remote_resource(&self, resource: &str, subdir: Option<&str>) -> Result<Meta, Error> {
-        // Otherwise we attempt to parse the URL.
-        let url =
-            reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl(String::from(resource)))?;
-
         // Ensure root directory exists in case it has changed or been removed.
         if let Some(subdir_path) = subdir {
             fs::create_dir_all(&self.dir.join(subdir_path))?;
@@ -379,7 +370,7 @@ impl Cache {
         // No existing version or the existing versions are older than their freshness
         // lifetimes, so we'll query for the ETAG of the resource and then compare
         // that with any existing versions.
-        let etag = self.try_get_etag(resource, &url)?;
+        let etag = self.try_get_etag(resource)?;
         let path = self.resource_to_filepath(resource, &etag, subdir, None);
 
         // Before going further we need to obtain a lock on the file to provide
@@ -404,7 +395,7 @@ impl Cache {
         }
 
         // No up-to-date version cached, so we have to try downloading it.
-        let meta = self.try_download_resource(resource, &url, &path, &etag)?;
+        let meta = self.try_download_resource(resource, &path, &etag)?;
 
         info!("New version of {} cached", resource);
 
@@ -445,13 +436,12 @@ impl Cache {
     fn try_download_resource(
         &self,
         resource: &str,
-        url: &reqwest::Url,
         path: &Path,
         etag: &Option<String>,
     ) -> Result<Meta, Error> {
         let mut retries: u32 = 0;
         loop {
-            match self.download_resource(resource, &url, path, etag) {
+            match self.download_resource(resource, path, etag) {
                 Ok(meta) => {
                     return Ok(meta);
                 }
@@ -476,32 +466,50 @@ impl Cache {
         }
     }
 
+    fn check_response(response: &ureq::Response) -> Result<(), Error> {
+        if response.error() {
+            match response.synthetic_error() {
+                Some(err) => Err(Error::from(err)),
+                None => Err(Error::HttpStatusError(response.status())),
+            }
+        } else {
+            Ok(())
+        }
+    }
+
     fn download_resource(
         &self,
         resource: &str,
-        url: &reqwest::Url,
         path: &Path,
         etag: &Option<String>,
     ) -> Result<Meta, Error> {
-        debug!("Attempting connection to {}", url);
+        debug!("Attempting connection to {}", resource);
 
-        let mut response = self
-            .http_client
-            .get(url.clone())
-            .send()?
-            .error_for_status()?;
+        let mut request = ureq::get(resource);
+        if let Some(timeout) = self.connect_timeout {
+            request.timeout_connect(timeout.as_millis() as u64);
+        }
+        if let Some(timeout) = self.timeout {
+            request.timeout(timeout);
+        }
+        let response = request.call();
+        Self::check_response(&response)?;
 
-        debug!("Opened connection to {}", url);
+        debug!("Opened connection to {}", resource);
 
         // First we make a temporary file and download the contents of the resource into it.
         // Otherwise if we wrote directly to the cache file and the download got
         // interrupted we could be left with a corrupted cache file.
         let tempfile = NamedTempFile::new_in(path.parent().unwrap())?;
-        let mut tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path())?;
+        let tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path())?;
 
-        info!("Starting download of {}", url);
+        info!("Starting download of {}", resource);
 
-        response.copy_to(&mut tempfile_write_handle)?;
+        let mut buf_reader = BufReader::new(response.into_reader());
+        let mut buf_writer = BufWriter::new(tempfile_write_handle);
+        let bytes_read = io::copy(&mut buf_reader, &mut buf_writer)?;
+
+        debug!("Downloaded {} bytes", bytes_read);
 
         debug!("Writing meta file");
 
@@ -513,17 +521,17 @@ impl Cache {
         );
         meta.to_file()?;
 
-        debug!("Renaming temp file to cache location for {}", url);
+        debug!("Renaming temp file to cache location for {}", resource);
 
         fs::rename(tempfile.path(), &path)?;
 
         Ok(meta)
     }
 
-    fn try_get_etag(&self, resource: &str, url: &reqwest::Url) -> Result<Option<String>, Error> {
+    fn try_get_etag(&self, resource: &str) -> Result<Option<String>, Error> {
         let mut retries: u32 = 0;
         loop {
-            match self.get_etag(&url) {
+            match self.get_etag(resource) {
                 Ok(etag) => return Ok(etag),
                 Err(err) => {
                     if retries >= self.max_retries {
@@ -546,23 +554,18 @@ impl Cache {
         }
     }
 
-    fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Error> {
-        debug!("Fetching ETAG for {}", url);
-        let response = self
-            .http_client
-            .head(url.clone())
-            .send()?
-            .error_for_status()?;
-        if let Some(etag) = response.headers().get(ETAG) {
-            if let Ok(s) = etag.to_str() {
-                Ok(Some(s.into()))
-            } else {
-                debug!("No ETAG for {}", url);
-                Ok(None)
-            }
-        } else {
-            Ok(None)
+    fn get_etag(&self, resource: &str) -> Result<Option<String>, Error> {
+        debug!("Fetching ETAG for {}", resource);
+        let mut request = ureq::head(resource);
+        if let Some(timeout) = self.connect_timeout {
+            request.timeout_connect(timeout.as_millis() as u64);
         }
+        if let Some(timeout) = self.timeout {
+            request.timeout(timeout);
+        }
+        let response = request.call();
+        Self::check_response(&response)?;
+        Ok(response.header(ETAG).map(String::from))
     }
 
     pub(crate) fn resource_to_filepath(

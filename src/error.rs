@@ -41,19 +41,20 @@ pub enum Error {
     #[error("HTTP response timeout out")]
     HttpTimeoutError,
 
-    /// Arises when the HTTP client fails to build.
-    #[error("HTTP builder error")]
-    HttpBuilderError,
+    /// Arises when an HTTP connection fails.
+    #[error("HTTP connection failed")]
+    HttpConnectionError,
 
     /// Any other HTTP error that could occur while attempting to fetch a remote resource.
-    #[error("An HTTP error occurred")]
-    HttpError,
+    #[error("An HTTP error occurred ({0})")]
+    HttpError(String),
 }
 
 impl Error {
     pub(crate) fn is_retriable(&self) -> bool {
         match self {
             Error::HttpTimeoutError => true,
+            Error::HttpConnectionError => true,
             Error::HttpStatusError(status_code) => match status_code {
                 502 => true,
                 503 => true,
@@ -65,16 +66,11 @@ impl Error {
     }
 }
 
-impl From<reqwest::Error> for Error {
-    fn from(err: reqwest::Error) -> Error {
-        if err.is_status() {
-            Error::HttpStatusError(err.status().unwrap().as_u16())
-        } else if err.is_timeout() {
-            Error::HttpTimeoutError
-        } else if err.is_builder() {
-            Error::HttpBuilderError
-        } else {
-            Error::HttpError
+impl From<&ureq::Error> for Error {
+    fn from(err: &ureq::Error) -> Self {
+        match err {
+            ureq::Error::ConnectionFailed(_) => Error::HttpConnectionError,
+            _ => Error::HttpError(format!("{:?}", err)),
         }
     }
 }

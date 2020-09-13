@@ -1,12 +1,11 @@
 use crate::{meta::Meta, Cache, Options};
 use httpmock::Method::{GET, HEAD};
 use httpmock::{mock, with_mock_server};
-use reqwest::header::ETAG;
 use std::path::Path;
 use std::path::PathBuf;
 use tempfile::tempdir;
 
-static ETAG_KEY: reqwest::header::HeaderName = ETAG;
+static ETAG_KEY: &str = "ETag";
 
 #[test]
 fn test_url_to_filename_with_etag() {

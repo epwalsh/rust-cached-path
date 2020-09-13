@@ -17,10 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `Meta` struct is no longer public.
 - `Cache::cached_path_in_subdir` is now deprecated.
+- Switched to lightweight `ureq` HTTP library instead of `reqwest`.
 
 ### Removed
 
 - Removed the `only_keep_latest` setting for the `Cache`.
+- Removed `CacheBuilder::with_client_builder`.
+- Removed `CacheBuilder::client_builder`.
 
 ## [v0.4.2](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.3) - 2020-09-11
 
