@@ -299,7 +299,24 @@ impl Cache {
             filelock.lock_exclusive()?;
             debug!("Lock on extraction directory acquired for {}", resource);
 
-            if !dirpath.is_dir() {
+            let should_extract = if !dirpath.is_dir() {
+                true
+            } else {
+                // If the extraction directory already exists, compare the last modified
+                // time of the extraction dir against the cached resource file.
+                let cached_resource_last_modified = fs::metadata(&cached_path)?.modified().ok();
+                let extracted_dir_last_modified = fs::metadata(&dirpath)?.modified().ok();
+                match (cached_resource_last_modified, extracted_dir_last_modified) {
+                    (Some(t1), Some(t2)) => {
+                        // If the last mod time of the cached resource is later (more recent) than
+                        // the last mod time of the extraction directory, we should extract again.
+                        // This works here because `duration_since` gives an Err if t1 is later than t2.
+                        t2.duration_since(t1).is_err()
+                    }
+                    _ => true,
+                }
+            };
+            if should_extract {
                 info!("Extracting {} to {:?}", resource, dirpath);
                 let format = ArchiveFormat::parse_from_extension(resource)?;
                 extract_archive(&cached_path, &dirpath, &format)?;
