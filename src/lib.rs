@@ -73,7 +73,7 @@
 //!
 //! It's also easy to customize the cache location, the HTTP client, and other options
 //! using a [`CacheBuilder`](https://docs.rs/cached-path/*/cached_path/struct.CacheBuilder.html) to construct a custom
-//! [`Cache`](https://docs.rs/cached-path/*/cached_path/struct.Cache.html) object. This is also the recommended thing
+//! [`Cache`](https://docs.rs/cached-path/*/cached_path/struct.Cache.html) object. This is the recommended thing
 //! to do if your application makes multiple calls to `cached_path`, since it avoids the overhead
 //! of creating a new HTTP client on each call:
 //!
