@@ -25,7 +25,7 @@ pub enum Error {
     CacheCorrupted(String),
 
     /// Arises when a resource is treated as archive, but the extraction process fails.
-    #[error("Extracting archive failed")]
+    #[error("Extracting archive failed ({0})")]
     ExtractionError(String),
 
     /// Any IO error that could arise while attempting to cache a remote resource.

@@ -126,3 +126,6 @@ pub fn cached_path_with_options(resource: &str, options: &Options) -> Result<Pat
     let cache = Cache::builder().build()?;
     Ok(cache.cached_path_with_options(resource, options)?)
 }
+
+#[cfg(test)]
+mod test;
