@@ -315,6 +315,23 @@ impl Cache {
                     }
                     _ => true,
                 }
+                // NOTE: comparing system times like this is a little sketchy because these time measurements
+                // are not necessarily monotonic. It's actually possible for the modification
+                // time on the extraction directory to be earlier than the modification time of the
+                // archive file, even if the archive file was created before the extraction
+                // directory in reality (which should always be the case, unless the archive
+                // file was modified between separate calls to `cached_path_with_options()`).
+                //
+                // In practice this anamoly should be rare though, especially when the extraction
+                // process takes a relatively long time...
+                //
+                // The longer the extraction process takes, the more time there will be between
+                // when the archive was created and when the extraction directory will be created,
+                // and hence the smaller the probability of the times of these events not being monotonic.
+                //
+                // On the other hand, when the extraction time is REALLY fast, there will be a higher probability
+                // of the times not being monotonic, but it's not such a big deal if we decide
+                // to extract again since the extraction process is fast.
             };
             if should_extract {
                 info!("Extracting {} to {:?}", resource, dirpath);
