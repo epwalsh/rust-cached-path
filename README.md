@@ -32,8 +32,9 @@ cached version:
 ```rust
 use cached_path::cached_path;
 
-let path =
-cached_path("https://github.com/epwalsh/rust-cached-path/blob/master/README.md").unwrap();
+let path = cached_path(
+    "https://github.com/epwalsh/rust-cached-path/blob/master/README.md"
+).unwrap();
 assert!(path.is_file());
 ```
 
@@ -67,7 +68,7 @@ use cached_path::{cached_path_with_options, Options};
 let path = cached_path_with_options(
     "https://raw.githubusercontent.com/epwalsh/rust-cached-path/master/test_fixtures/utf-8_sample/archives/utf-8.tar.gz",
     &Options::default().extract(),
-    ).unwrap();
+).unwrap();
 assert!(path.is_dir());
 ```
 
