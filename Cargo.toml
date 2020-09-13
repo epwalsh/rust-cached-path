@@ -1,6 +1,6 @@
 [package]
 name = "cached-path"
-version = "0.4.3"
+version = "0.4.4"
 authors = ["epwalsh <epwalsh10@gmail.com>"]
 edition = "2018"
 keywords = ["http", "caching"]

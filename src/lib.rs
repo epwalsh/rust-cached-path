@@ -25,8 +25,9 @@
 //! ```rust
 //! use cached_path::cached_path;
 //!
-//! let path =
-//! cached_path("https://github.com/epwalsh/rust-cached-path/blob/master/README.md").unwrap();
+//! let path = cached_path(
+//!     "https://github.com/epwalsh/rust-cached-path/blob/master/README.md"
+//! ).unwrap();
 //! assert!(path.is_file());
 //! ```
 //!
@@ -47,11 +48,30 @@
 //!
 //! ```bash
 //! # From the command line:
-//! $ cached-path https://github.com/epwalsh/rust-cached-path/blob/master/README.md
+//! $ cached-path README.md
 //! README.md
 //! ```
 //!
-//! It's easy to customize the cache location, the HTTP client, and other options
+//! For resources that are archives, like `*.tar.gz` files, `cached-path` can also
+//! automatically extract the files:
+//!
+//! ```rust
+//! use cached_path::{cached_path_with_options, Options};
+//!
+//! let path = cached_path_with_options(
+//!     "https://raw.githubusercontent.com/epwalsh/rust-cached-path/master/test_fixtures/utf-8_sample/archives/utf-8.tar.gz",
+//!     &Options::default().extract(),
+//! ).unwrap();
+//! assert!(path.is_dir());
+//! ```
+//!
+//! ```bash
+//! # From the command line:
+//! $ cached-path --extract https://raw.githubusercontent.com/epwalsh/rust-cached-path/master/test_fixtures/utf-8_sample/archives/utf-8.tar.gz
+//! README.md
+//! ```
+//!
+//! It's also easy to customize the cache location, the HTTP client, and other options
 //! using a [`CacheBuilder`](https://docs.rs/cached-path/*/cached_path/struct.CacheBuilder.html) to construct a custom
 //! [`Cache`](https://docs.rs/cached-path/*/cached_path/struct.Cache.html) object. This is also the recommended thing
 //! to do if your application makes multiple calls to `cached_path`, since it avoids the overhead
@@ -93,4 +113,16 @@ pub use crate::error::Error;
 pub fn cached_path(resource: &str) -> Result<PathBuf, Error> {
     let cache = Cache::builder().build()?;
     Ok(cache.cached_path(resource)?)
+}
+
+/// Get the cached path to a resource using the given options.
+///
+/// This is equivalent to calling
+/// [`Cache::cached_path_with_options`](struct.Cache.html#method.cached_path_with_options)
+/// with a temporary [`Cache`](struct.Cache.html) object.
+/// Therefore if you're going to be calling this function multiple times,
+/// it's more efficient to create and use a single `Cache` instead.
+pub fn cached_path_with_options(resource: &str, options: &Options) -> Result<PathBuf, Error> {
+    let cache = Cache::builder().build()?;
+    Ok(cache.cached_path_with_options(resource, options)?)
 }

@@ -148,27 +148,12 @@ impl Default for CacheBuilder {
     }
 }
 
-/// When you need control over cache location or the HTTP client used to download
-/// resources, you can create a [`Cache`](struct.Cache.html) instance and then use the
-/// instance method [`cached_path`](struct.Cache.html#method.cached_path).
-#[derive(Debug, Clone)]
-pub struct Cache {
-    /// The root directory of the cache.
-    pub dir: PathBuf,
-    http_client: Client,
-    max_retries: u32,
-    max_backoff: u32,
-    freshness_lifetime: Option<u64>,
-    offline: bool,
-    only_keep_latest: bool,
-}
-
 /// Options to use with [`Cache::cached_path_with_options`](struct.Cache.html#method.cached_with_options).
 #[derive(Default)]
 pub struct Options {
-    /// An optional subdirectory (relative to the cache root) to use.
+    /// An optional subdirectory (relative to the cache root) to cache the resource in.
     pub subdir: Option<String>,
-    /// Automatically extract the resource, assuming the resource an archive.
+    /// Automatically extract the resource, assuming the resource is an archive.
     pub extract: bool,
 }
 
@@ -179,6 +164,31 @@ impl Options {
             extract,
         }
     }
+
+    /// The the cache subdirectory to use.
+    pub fn subdir(mut self, subdir: &str) -> Self {
+        self.subdir = Some(subdir.into());
+        self
+    }
+
+    /// Treat the resource as an archive and try to extract it.
+    pub fn extract(mut self) -> Self {
+        self.extract = true;
+        self
+    }
+}
+
+/// Fetches and manages resources in a local cache directory.
+#[derive(Debug, Clone)]
+pub struct Cache {
+    /// The root directory of the cache.
+    pub dir: PathBuf,
+    http_client: Client,
+    max_retries: u32,
+    max_backoff: u32,
+    freshness_lifetime: Option<u64>,
+    offline: bool,
+    only_keep_latest: bool,
 }
 
 impl Cache {
@@ -197,11 +207,40 @@ impl Cache {
     /// If the resource is local file, it's path is returned. If the resource is a static HTTP
     /// resource, it will cached locally and the path to the cache file will be returned.
     pub fn cached_path(&self, resource: &str) -> Result<PathBuf, Error> {
-        let options = Options::default();
-        self.cached_path_with_options(resource, &options)
+        self.cached_path_with_options(resource, &Options::default())
     }
 
     /// Get the cached path to a resource using the given options.
+    ///
+    /// # Examples
+    ///
+    /// Use a particular subdirectory of the cache root:
+    ///
+    /// ```rust,no_run
+    /// # use cached_path::{Cache, Options};
+    /// # let cache = Cache::new().unwrap();
+    /// # let subdir = "target";
+    /// # let resource = "README.md";
+    /// let path = cache.cached_path_with_options(
+    ///     resource,
+    ///     &Options::default().subdir(subdir),
+    /// ).unwrap();
+    /// ```
+    ///
+    /// Treat the resource as an archive and extract it. The path returned is the
+    /// path to the extraction directory:
+    ///
+    /// ```rust,no_run
+    /// # use cached_path::{Cache, Options};
+    /// # let cache = Cache::new().unwrap();
+    /// # let subdir = "target";
+    /// # let resource = "README.md";
+    /// let path = cache.cached_path_with_options(
+    ///     resource,
+    ///     &Options::default().extract(),
+    /// ).unwrap();
+    /// assert!(path.is_dir());
+    /// ```
     pub fn cached_path_with_options(
         &self,
         resource: &str,
@@ -285,9 +324,15 @@ impl Cache {
     /// # let cache = Cache::new().unwrap();
     /// # let subdir = "target";
     /// # let resource = "README.md";
-    /// let options = Options::new(Some(subdir), false);
-    /// let path = cache.cached_path_with_options(resource, &options).unwrap();
+    /// let path = cache.cached_path_with_options(
+    ///     resource,
+    ///     &Options::default().subdir(subdir),
+    /// ).unwrap();
     /// ```
+    #[deprecated(
+        since = "0.4.4",
+        note = "Please use Cache::cached_path_with_options() instead"
+    )]
     pub fn cached_path_in_subdir(
         &self,
         resource: &str,
@@ -851,7 +896,7 @@ mod tests {
 
         // Get the cached path.
         let path = cache
-            .cached_path_in_subdir(&resource[..], Some("target"))
+            .cached_path_with_options(&resource[..], &Options::default().subdir("target"))
             .unwrap();
         assert_eq!(
             path,
@@ -883,7 +928,6 @@ mod tests {
             .build()
             .unwrap();
 
-        let options = Options::new(None, true);
         let resource: PathBuf = [
             ".",
             "test_fixtures",
@@ -895,7 +939,7 @@ mod tests {
         .collect();
 
         let path = cache
-            .cached_path_with_options(resource.to_str().unwrap(), &options)
+            .cached_path_with_options(resource.to_str().unwrap(), &Options::default().extract())
             .unwrap();
         assert!(path.is_dir());
         assert!(path.to_str().unwrap().ends_with("-extracted"));
@@ -915,7 +959,6 @@ mod tests {
             .build()
             .unwrap();
 
-        let options = Options::new(Some("target"), true);
         let resource: PathBuf = [
             ".",
             "test_fixtures",
@@ -927,7 +970,10 @@ mod tests {
         .collect();
 
         let path = cache
-            .cached_path_with_options(resource.to_str().unwrap(), &options)
+            .cached_path_with_options(
+                resource.to_str().unwrap(),
+                &Options::default().subdir("target").extract(),
+            )
             .unwrap();
         assert!(path.is_dir());
         assert!(path.to_str().unwrap().ends_with("-extracted"));
