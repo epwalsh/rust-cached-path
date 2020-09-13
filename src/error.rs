@@ -16,9 +16,15 @@ pub enum Error {
     #[error("Offline mode is enabled but no cached versions of resouce exist ({0})")]
     NoCachedVersions(String),
 
+    /// Arises when the cache is corrupted for some reason.
+    ///
+    /// If this error occurs, it is almost certainly the result of an external process
+    /// "messing" with the cache directory, since `cached-path` takes great care
+    /// to avoid accidental corruption on its own.
     #[error("Cache is corrupted ({0})")]
     CacheCorrupted(String),
 
+    /// Arises when a resource is treated as archive, but the extraction process fails.
     #[error("Extracting archive failed")]
     ExtractionError(String),
 
