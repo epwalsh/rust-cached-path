@@ -4,6 +4,7 @@ use crate::utils::hash_str;
 use crate::{meta::Meta, Error};
 use fs2::FileExt;
 use glob::glob;
+use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error, info, warn};
 use rand::distributions::{Distribution, Uniform};
 use std::default::Default;
@@ -481,9 +482,15 @@ impl Cache {
 
         info!("Starting download of {}", resource);
 
-        let mut buf_reader = BufReader::new(read_handle);
+        let spinner = ProgressBar::new_spinner();
+        spinner.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner} {bytes} [{bytes_per_sec}, {elapsed}]"),
+        );
+        spinner.set_draw_delta(1_000_000);
+        let buf_reader = BufReader::new(read_handle);
         let mut buf_writer = BufWriter::new(tempfile_write_handle);
-        let bytes_read = io::copy(&mut buf_reader, &mut buf_writer)?;
+        let bytes_read = io::copy(&mut spinner.wrap_read(buf_reader), &mut buf_writer)?;
 
         debug!("Downloaded {} bytes", bytes_read);
         debug!("Writing meta file");

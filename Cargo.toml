@@ -23,6 +23,7 @@ required-features = ["build-binary"]
 
 [dependencies]
 fs2 = "0.4"
+indicatif = "0.15"
 ureq = "1.4"
 sha2 = "0.9"
 tempfile = "3.1"
