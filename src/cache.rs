@@ -183,10 +183,25 @@ impl Options {
 pub struct Cache {
     /// The root directory of the cache.
     pub dir: PathBuf,
+    /// The maximum number of times to retry downloading a remote resource.
     pub max_retries: u32,
+    /// The maximum amount of time (in milliseconds) to wait before retrying a download.
     pub max_backoff: u32,
+    /// An optional freshness lifetime (in seconds).
+    ///
+    /// If set, resources that were cached within the past `freshness_lifetime` seconds
+    /// will always be regarded as fresh, and so the ETag of the corresponding remote
+    /// resource won't be checked.
     pub freshness_lifetime: Option<u64>,
+    /// Offline mode.
+    ///
+    /// If set to `true`, no HTTP calls will be made.
     pub offline: bool,
+    /// Automatically evict old versions of a cached resource.
+    ///
+    /// Use this with caution! When cleaning out old versions of a cached resource,
+    /// there is no way to tell if other processes have open file handles to any of
+    /// those.
     pub only_keep_latest: bool,
     http_client: Client,
 }
