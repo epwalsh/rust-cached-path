@@ -487,7 +487,7 @@ impl Cache {
             ProgressStyle::default_spinner()
                 .template("{spinner} {bytes} [{bytes_per_sec}, {elapsed}]"),
         );
-        spinner.set_draw_delta(1_000_000);
+        spinner.set_draw_delta(100_000);
         let buf_reader = BufReader::new(read_handle);
         let mut buf_writer = BufWriter::new(tempfile_write_handle);
         let bytes_read = io::copy(&mut spinner.wrap_read(buf_reader), &mut buf_writer)?;
