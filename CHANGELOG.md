@@ -9,7 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a method `Cache::cached_path_with_options` and a corresponding `Options` struct.
+- Added ability to automatically extract archives through the `Cache::cached_path_with_options` method.
 - Added integration tests.
+
+### Changed
+
+- `Meta` struct is no longer public.
+- `Cache::cached_path_in_subdir` is now deprecated.
+
+### Removed
+
+- Removed the `only_keep_latest` setting for the `Cache`.
 
 ## [v0.4.2](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.3) - 2020-09-11
 

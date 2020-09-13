@@ -12,8 +12,9 @@ use std::thread;
 use std::time::{self, Duration};
 use tempfile::NamedTempFile;
 
+use crate::archives::{extract_archive, ArchiveFormat};
 use crate::utils::hash_str;
-use crate::{Error, Meta};
+use crate::{meta::Meta, Error};
 
 /// Builder to facilitate creating [`Cache`](struct.Cache.html) objects.
 #[derive(Debug)]
@@ -29,7 +30,6 @@ struct Config {
     max_backoff: u32,
     freshness_lifetime: Option<u64>,
     offline: bool,
-    only_keep_latest: bool,
 }
 
 impl CacheBuilder {
@@ -43,7 +43,6 @@ impl CacheBuilder {
                 max_backoff: 5000,
                 freshness_lifetime: None,
                 offline: false,
-                only_keep_latest: false,
             },
         }
     }
@@ -109,15 +108,6 @@ impl CacheBuilder {
         self
     }
 
-    /// Remove older cached versions of a resource when a newer version is cached.
-    ///
-    /// In general, setting this to `true` is not recommended because it could result
-    /// in deleting a cached file that another process is trying to read.
-    pub fn only_keep_latest(mut self, only_keep_latest: bool) -> CacheBuilder {
-        self.config.only_keep_latest = only_keep_latest;
-        self
-    }
-
     /// Build the `Cache` object.
     pub fn build(self) -> Result<Cache, Error> {
         let dir = self.config.dir.unwrap_or_else(|| {
@@ -136,7 +126,6 @@ impl CacheBuilder {
             max_backoff: self.config.max_backoff,
             freshness_lifetime: self.config.freshness_lifetime,
             offline: self.config.offline,
-            only_keep_latest: self.config.only_keep_latest,
         })
     }
 }
@@ -147,18 +136,56 @@ impl Default for CacheBuilder {
     }
 }
 
-/// When you need control over cache location or the HTTP client used to download
-/// resources, you can create a [`Cache`](struct.Cache.html) instance and then use the
-/// instance method [`cached_path`](struct.Cache.html#method.cached_path).
+/// Options to use with [`Cache::cached_path_with_options`](struct.Cache.html#method.cached_with_options).
+#[derive(Default)]
+pub struct Options {
+    /// An optional subdirectory (relative to the cache root) to cache the resource in.
+    pub subdir: Option<String>,
+    /// Automatically extract the resource, assuming the resource is an archive.
+    pub extract: bool,
+}
+
+impl Options {
+    pub fn new(subdir: Option<&str>, extract: bool) -> Self {
+        Self {
+            subdir: subdir.map(String::from),
+            extract,
+        }
+    }
+
+    /// The the cache subdirectory to use.
+    pub fn subdir(mut self, subdir: &str) -> Self {
+        self.subdir = Some(subdir.into());
+        self
+    }
+
+    /// Treat the resource as an archive and try to extract it.
+    pub fn extract(mut self) -> Self {
+        self.extract = true;
+        self
+    }
+}
+
+/// Fetches and manages resources in a local cache directory.
 #[derive(Debug, Clone)]
 pub struct Cache {
+    /// The root directory of the cache.
     pub dir: PathBuf,
+    /// The maximum number of times to retry downloading a remote resource.
+    pub max_retries: u32,
+    /// The maximum amount of time (in milliseconds) to wait before retrying a download.
+    pub max_backoff: u32,
+    /// An optional freshness lifetime (in seconds).
+    ///
+    /// If set, resources that were cached within the past `freshness_lifetime` seconds
+    /// will always be regarded as fresh, and so the ETag of the corresponding remote
+    /// resource won't be checked.
+    pub freshness_lifetime: Option<u64>,
+    /// Offline mode.
+    ///
+    /// If set to `true`, no HTTP calls will be made.
+    pub offline: bool,
     http_client: Client,
-    max_retries: u32,
-    max_backoff: u32,
-    freshness_lifetime: Option<u64>,
-    offline: bool,
-    only_keep_latest: bool,
 }
 
 impl Cache {
@@ -177,27 +204,149 @@ impl Cache {
     /// If the resource is local file, it's path is returned. If the resource is a static HTTP
     /// resource, it will cached locally and the path to the cache file will be returned.
     pub fn cached_path(&self, resource: &str) -> Result<PathBuf, Error> {
-        Ok(self.cached_path_in_subdir(resource, None)?)
+        self.cached_path_with_options(resource, &Options::default())
     }
 
-    /// Get the cached path to a resource, using the given cache subdirectory relative to the cache root.
+    /// Get the cached path to a resource using the given options.
+    ///
+    /// # Examples
+    ///
+    /// Use a particular subdirectory of the cache root:
+    ///
+    /// ```rust,no_run
+    /// # use cached_path::{Cache, Options};
+    /// # let cache = Cache::new().unwrap();
+    /// # let subdir = "target";
+    /// # let resource = "README.md";
+    /// let path = cache.cached_path_with_options(
+    ///     resource,
+    ///     &Options::default().subdir(subdir),
+    /// ).unwrap();
+    /// ```
+    ///
+    /// Treat the resource as an archive and extract it. The path returned is the
+    /// path to the extraction directory:
+    ///
+    /// ```rust,no_run
+    /// # use cached_path::{Cache, Options};
+    /// # let cache = Cache::new().unwrap();
+    /// # let subdir = "target";
+    /// # let resource = "README.md";
+    /// let path = cache.cached_path_with_options(
+    ///     resource,
+    ///     &Options::default().extract(),
+    /// ).unwrap();
+    /// assert!(path.is_dir());
+    /// ```
+    pub fn cached_path_with_options(
+        &self,
+        resource: &str,
+        options: &Options,
+    ) -> Result<PathBuf, Error> {
+        let cached_path: PathBuf;
+        let mut extraction_dir: Option<PathBuf> = None;
+
+        if !resource.starts_with("http") {
+            // If resource doesn't look like a URL, treat as local path, but return
+            // an error if the path doesn't exist.
+            info!("Treating {} as local file", resource);
+            cached_path = PathBuf::from(resource);
+
+            if !cached_path.is_file() {
+                return Err(Error::ResourceNotFound(String::from(resource)));
+            }
+
+            if options.extract {
+                // If we need to extract, we extract into a unique subdirectory of the cache directory
+                // so as not to mess with the file system outside of the cache directory.
+                // To make sure that we use a unique directory for each "version" of this local
+                // resource, we treat the last modified time as an ETag.
+                let resource_last_modified = fs::metadata(resource)?
+                    .modified()
+                    .ok()
+                    .and_then(|sys_time| sys_time.elapsed().ok())
+                    .map(|duration| format!("{}", duration.as_secs()));
+                extraction_dir = Some(self.resource_to_filepath(
+                    resource,
+                    &resource_last_modified,
+                    options.subdir.as_deref(),
+                    Some("-extracted"),
+                ));
+            }
+        } else {
+            // This is a remote resource, so fetch it to the cache.
+            let meta = self.fetch_remote_resource(resource, options.subdir.as_deref())?;
+
+            // Check if we need to extract.
+            if options.extract {
+                extraction_dir = Some(meta.get_extraction_path());
+            }
+
+            cached_path = meta.resource_path;
+        }
+
+        if let Some(dirpath) = extraction_dir {
+            // Extract archive.
+            debug!("Treating {} as archive", resource);
+
+            fs::create_dir_all(&dirpath.parent().unwrap())?;
+
+            // Need to acquire a lock here to make sure we don't try to extract
+            // the same archive in parallel from multiple processes.
+            debug!("Acquiring lock on extraction directory for {}", resource);
+            let lock_path = format!("{}.lock", dirpath.to_str().unwrap());
+            let filelock = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(lock_path)?;
+            filelock.lock_exclusive()?;
+            debug!("Lock on extraction directory acquired for {}", resource);
+
+            if !dirpath.is_dir() {
+                info!("Extracting {} to {:?}", resource, dirpath);
+                let format = ArchiveFormat::parse_from_extension(resource)?;
+                extract_archive(&cached_path, &dirpath, &format)?;
+            }
+
+            filelock.unlock()?;
+            debug!("Lock released on extraction directory for {}", resource);
+
+            Ok(dirpath)
+        } else {
+            Ok(cached_path)
+        }
+    }
+
+    /// A convenience method to get the cached path to a resource using the given
+    /// cache subdirectory (relative to the cache root).
+    ///
+    /// This is equivalent to:
+    ///
+    /// ```rust,no_run
+    /// # use cached_path::{Cache, Options};
+    /// # let cache = Cache::new().unwrap();
+    /// # let subdir = "target";
+    /// # let resource = "README.md";
+    /// let path = cache.cached_path_with_options(
+    ///     resource,
+    ///     &Options::default().subdir(subdir),
+    /// ).unwrap();
+    /// ```
+    #[deprecated(
+        since = "0.4.4",
+        note = "Please use Cache::cached_path_with_options() instead"
+    )]
     pub fn cached_path_in_subdir(
         &self,
         resource: &str,
         subdir: Option<&str>,
     ) -> Result<PathBuf, Error> {
-        // If resource doesn't look like a URL, treat as local path, but return
-        // an error if the path doesn't exist.
-        if !resource.starts_with("http") {
-            info!("Treating {} as local file", resource);
-            let path = PathBuf::from(resource);
-            if !path.is_file() {
-                return Err(Error::ResourceNotFound(String::from(resource)));
-            } else {
-                return Ok(path);
-            }
-        }
+        let options = Options::new(subdir, false);
+        self.cached_path_with_options(resource, &options)
+    }
 
+    fn fetch_remote_resource(&self, resource: &str, subdir: Option<&str>) -> Result<Meta, Error> {
         // Otherwise we attempt to parse the URL.
         let url =
             reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl(String::from(resource)))?;
@@ -215,8 +364,7 @@ impl Cache {
         if self.offline {
             if !versions.is_empty() {
                 info!("Found existing cached version of {}", resource);
-                self.clean_up(&versions, Some(&versions[0].resource_path));
-                return Ok(versions[0].resource_path.clone());
+                return Ok(versions[0].clone());
             } else {
                 error!("Offline mode is enabled but no cached versions of resource exist.");
                 return Err(Error::NoCachedVersions(String::from(resource)));
@@ -225,15 +373,14 @@ impl Cache {
             // Oh hey, the latest version is still fresh! We can clean up any
             // older versions and return the latest.
             info!("Latest cached version of {} is still fresh", resource);
-            self.clean_up(&versions, Some(&versions[0].resource_path));
-            return Ok(versions[0].resource_path.clone());
+            return Ok(versions[0].clone());
         }
 
         // No existing version or the existing versions are older than their freshness
         // lifetimes, so we'll query for the ETAG of the resource and then compare
         // that with any existing versions.
         let etag = self.try_get_etag(resource, &url)?;
-        let path = self.resource_to_filepath(resource, &etag, subdir);
+        let path = self.resource_to_filepath(resource, &etag, subdir, None);
 
         // Before going further we need to obtain a lock on the file to provide
         // parallel downloads of the same resource.
@@ -253,10 +400,7 @@ impl Cache {
             // dangling ones.
             info!("Cached version of {} is up-to-date", resource);
             filelock.unlock()?;
-            if !versions.is_empty() {
-                self.clean_up(&versions, Some(&path));
-            }
-            return Ok(path);
+            return Ok(Meta::from_cache(&path)?);
         }
 
         // No up-to-date version cached, so we have to try downloading it.
@@ -267,9 +411,7 @@ impl Cache {
         filelock.unlock()?;
         debug!("Lock released for {}", resource);
 
-        self.clean_up(&versions, Some(&meta.resource_path));
-
-        Ok(meta.resource_path)
+        Ok(meta)
     }
 
     /// Find existing versions of a cached resource, sorted by most recent first.
@@ -277,7 +419,7 @@ impl Cache {
         let mut existing_meta: Vec<Meta> = vec![];
         let glob_string = format!(
             "{}.*.meta",
-            self.resource_to_filepath(resource, &None, subdir)
+            self.resource_to_filepath(resource, &None, subdir, None)
                 .to_str()
                 .unwrap(),
         );
@@ -289,24 +431,6 @@ impl Cache {
         existing_meta
             .sort_unstable_by(|a, b| b.creation_time.partial_cmp(&a.creation_time).unwrap());
         existing_meta
-    }
-
-    fn clean_up(&self, versions: &[Meta], keep: Option<&Path>) {
-        if self.only_keep_latest {
-            for meta in versions {
-                if let Some(path) = keep {
-                    if path == meta.resource_path {
-                        continue;
-                    }
-                }
-                debug!(
-                    "Removing old version at {}",
-                    meta.resource_path.to_str().unwrap()
-                );
-                fs::remove_file(&meta.meta_path).ok();
-                fs::remove_file(&meta.resource_path).ok();
-            }
-        }
     }
 
     fn get_retry_delay(&self, retries: u32) -> u32 {
@@ -441,20 +565,25 @@ impl Cache {
         }
     }
 
-    fn resource_to_filepath(
+    pub(crate) fn resource_to_filepath(
         &self,
         resource: &str,
         etag: &Option<String>,
         subdir: Option<&str>,
+        suffix: Option<&str>,
     ) -> PathBuf {
         let resource_hash = hash_str(resource);
-        let filename: String;
+        let mut filename: String;
 
         if let Some(tag) = etag {
             let etag_hash = hash_str(&tag[..]);
             filename = format!("{}.{}", resource_hash, etag_hash);
         } else {
             filename = resource_hash;
+        }
+
+        if let Some(suf) = suffix {
+            filename.push_str(suf);
         }
 
         let filepath = PathBuf::from(filename);
@@ -464,255 +593,5 @@ impl Cache {
         } else {
             self.dir.join(filepath)
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use httpmock::Method::{GET, HEAD};
-    use httpmock::{mock, with_mock_server};
-    use std::path::Path;
-    use tempfile::tempdir;
-
-    static ETAG_KEY: reqwest::header::HeaderName = ETAG;
-
-    #[test]
-    fn test_url_to_filename() {
-        let cache_dir = tempdir().unwrap();
-        let cache = Cache::builder()
-            .dir(cache_dir.path().to_owned())
-            .build()
-            .unwrap();
-
-        let resource = "http://localhost:5000/foo.txt";
-        let etag = String::from("abcd");
-
-        assert_eq!(
-            cache
-                .resource_to_filepath(resource, &Some(etag), None)
-                .to_str()
-                .unwrap(),
-            format!(
-                "{}{}{}.{}",
-                cache_dir.path().to_str().unwrap(),
-                std::path::MAIN_SEPARATOR,
-                "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
-                "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589"
-            )
-        );
-        assert_eq!(
-            cache
-                .resource_to_filepath(resource, &None, None)
-                .to_str()
-                .unwrap(),
-            format!(
-                "{}{}{}",
-                cache_dir.path().to_str().unwrap(),
-                std::path::MAIN_SEPARATOR,
-                "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
-            )
-        );
-        assert_eq!(
-            cache
-                .resource_to_filepath(resource, &None, Some("target"))
-                .to_str()
-                .unwrap(),
-            format!(
-                "{}{}{}{}{}",
-                cache_dir.path().to_str().unwrap(),
-                std::path::MAIN_SEPARATOR,
-                "target",
-                std::path::MAIN_SEPARATOR,
-                "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
-            )
-        );
-    }
-
-    #[test]
-    fn test_get_cached_path_local_file() {
-        // Setup cache.
-        let cache_dir = tempdir().unwrap();
-        let cache = Cache::builder()
-            .dir(cache_dir.path().to_owned())
-            .build()
-            .unwrap();
-
-        let path = cache.cached_path("README.md").unwrap();
-        assert_eq!(path, Path::new("README.md"));
-    }
-
-    #[test]
-    fn test_get_cached_path_non_existant_local_file_fails() {
-        // Setup cache.
-        let cache_dir = tempdir().unwrap();
-        let cache = Cache::builder()
-            .dir(cache_dir.path().to_owned())
-            .build()
-            .unwrap();
-
-        let result = cache.cached_path("BLAH");
-        assert!(result.is_err());
-    }
-
-    #[with_mock_server]
-    #[test]
-    fn test_cached_path() {
-        // For debugging:
-        // let _ = env_logger::try_init();
-
-        // Setup cache.
-        let cache_dir = tempdir().unwrap();
-        let mut cache = Cache::builder()
-            .dir(cache_dir.path().to_owned())
-            .freshness_lifetime(300)
-            .only_keep_latest(true)
-            .build()
-            .unwrap();
-
-        let resource = "http://localhost:5000/resource.txt";
-
-        // Mock the resource.
-        let mut mock_1_head = mock(HEAD, "/resource.txt")
-            .return_status(200)
-            .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
-            .create();
-        let mut mock_1_get = mock(GET, "/resource.txt")
-            .return_status(200)
-            .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
-            .return_body("Hello, World!")
-            .create();
-
-        // Get the cached path.
-        let path = cache.cached_path(&resource[..]).unwrap();
-        assert_eq!(
-            path,
-            cache.resource_to_filepath(&resource, &Some(String::from("fake-etag")), None)
-        );
-
-        assert_eq!(mock_1_head.times_called(), 1);
-        assert_eq!(mock_1_get.times_called(), 1);
-
-        // Ensure the file and meta exist.
-        assert!(path.is_file());
-        assert!(Meta::meta_path(&path).is_file());
-
-        // Ensure the contents of the file are correct.
-        let contents = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(&contents[..], "Hello, World!");
-
-        // When we attempt to get the resource again, the cache should still be fresh.
-        let mut meta = Meta::from_cache(&path).unwrap();
-        assert!(meta.is_fresh(None));
-        let same_path = cache.cached_path(&resource[..]).unwrap();
-        assert_eq!(same_path, path);
-        assert!(path.is_file());
-        assert!(Meta::meta_path(&path).is_file());
-
-        // Didn't have to call HEAD or GET again.
-        assert_eq!(mock_1_head.times_called(), 1);
-        assert_eq!(mock_1_get.times_called(), 1);
-
-        // Now expire the resource to continue testing.
-        meta.expires = None;
-        meta.to_file().unwrap();
-        cache.freshness_lifetime = None;
-
-        // After calling again when the resource is no longer fresh, the ETAG
-        // should have been queried again with HEAD, but the resource should not have been
-        // downloaded again with GET.
-        let same_path = cache.cached_path(&resource[..]).unwrap();
-        assert_eq!(same_path, path);
-        assert!(path.is_file());
-        assert!(Meta::meta_path(&path).is_file());
-        assert_eq!(mock_1_head.times_called(), 2);
-        assert_eq!(mock_1_get.times_called(), 1);
-
-        // Now update the resource.
-        mock_1_head.delete();
-        mock_1_get.delete();
-        let mock_2_head = mock(HEAD, "/resource.txt")
-            .return_status(200)
-            .return_header(&ETAG_KEY.to_string()[..], "fake-etag-2")
-            .create();
-        let mock_2_get = mock(GET, "/resource.txt")
-            .return_status(200)
-            .return_header(&ETAG_KEY.to_string()[..], "fake-etag-2")
-            .return_body("Well hello again")
-            .create();
-
-        // Get the new cached path.
-        let new_path = cache.cached_path(&resource[..]).unwrap();
-        assert_eq!(
-            new_path,
-            cache.resource_to_filepath(&resource, &Some(String::from("fake-etag-2")), None)
-        );
-
-        assert_eq!(mock_2_head.times_called(), 1);
-        assert_eq!(mock_2_get.times_called(), 1);
-
-        // This should be different from the old path.
-        assert_ne!(path, new_path);
-
-        // Ensure the file and meta exist.
-        assert!(new_path.is_file());
-        assert!(Meta::meta_path(&new_path).is_file());
-
-        // Ensure the old version was cleaned up.
-        assert!(!path.is_file());
-        assert!(!Meta::meta_path(&path).is_file());
-
-        // Ensure the contents of the file are correct.
-        let new_contents = std::fs::read_to_string(&new_path).unwrap();
-        assert_eq!(&new_contents[..], "Well hello again");
-    }
-
-    #[with_mock_server]
-    #[test]
-    fn test_cached_path_in_subdir() {
-        // For debugging:
-        let _ = env_logger::try_init();
-
-        // Setup cache.
-        let cache_dir = tempdir().unwrap();
-        let cache = Cache::builder()
-            .dir(cache_dir.path().to_owned())
-            .freshness_lifetime(300)
-            .only_keep_latest(true)
-            .build()
-            .unwrap();
-
-        let resource = "http://localhost:5000/resource.txt";
-
-        // Mock the resource.
-        let mock_1_head = mock(HEAD, "/resource.txt")
-            .return_status(200)
-            .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
-            .create();
-        let mock_1_get = mock(GET, "/resource.txt")
-            .return_status(200)
-            .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
-            .return_body("Hello, World!")
-            .create();
-
-        // Get the cached path.
-        let path = cache
-            .cached_path_in_subdir(&resource[..], Some("target"))
-            .unwrap();
-        assert_eq!(
-            path,
-            cache.resource_to_filepath(&resource, &Some(String::from("fake-etag")), Some("target"))
-        );
-
-        assert_eq!(mock_1_head.times_called(), 1);
-        assert_eq!(mock_1_get.times_called(), 1);
-
-        // Ensure the file and meta exist.
-        assert!(path.is_file());
-        assert!(Meta::meta_path(&path).is_file());
-
-        // Ensure the contents of the file are correct.
-        let contents = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(&contents[..], "Hello, World!");
     }
 }
