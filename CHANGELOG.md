@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v0.4.4](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.4) - 2020-09-13
+
 ### Added
 
 - Added a method `Cache::cached_path_with_options` and a corresponding `Options` struct.
@@ -24,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Removed the `only_keep_latest` setting for the `Cache`.
 
-## [v0.4.2](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.3) - 2020-09-11
+## [v0.4.3](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.3) - 2020-09-11
 
 ### Changed
 
