@@ -54,9 +54,9 @@ struct Opt {
     /// Only use offline features.
     offline: bool,
 
-    #[structopt(long = "file-friendly-logging")]
-    /// Use a light / file-friendly progress bar for downloads.
-    file_friendly_logging: bool,
+    #[structopt(short = "-q", long = "quietly")]
+    /// Disable the progress bar for downloads.
+    quietly: bool,
 }
 
 fn main() -> Result<()> {
@@ -89,8 +89,10 @@ fn build_cache_from_opt(opt: &Opt) -> Result<Cache, Error> {
     }
     cache_builder = cache_builder.max_retries(opt.max_retries);
     cache_builder = cache_builder.max_backoff(opt.max_backoff);
-    if !opt.file_friendly_logging {
+    if !opt.quietly {
         cache_builder = cache_builder.progress_bar(Some(ProgressBar::Full));
+    } else {
+        cache_builder = cache_builder.progress_bar(None);
     }
     cache_builder.build()
 }
