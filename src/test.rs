@@ -1,110 +1,53 @@
 use crate::{meta::Meta, Cache, Options};
 use httpmock::Method::{GET, HEAD};
-use httpmock::{mock, with_mock_server};
-use reqwest::header::ETAG;
+use httpmock::{Mock, MockRef, MockServer};
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use tempfile::tempdir;
 
-static ETAG_KEY: reqwest::header::HeaderName = ETAG;
+static ETAG_KEY: &str = "ETag";
 
-#[test]
-fn test_url_to_filename_with_etag() {
-    let cache_dir = tempdir().unwrap();
-    let cache = Cache::builder()
-        .dir(cache_dir.path().to_owned())
-        .build()
-        .unwrap();
-
-    let resource = "http://localhost:5000/foo.txt";
-    let etag = String::from("abcd");
-
-    assert_eq!(
-        cache
-            .resource_to_filepath(resource, &Some(etag), None, None)
-            .to_str()
-            .unwrap(),
-        format!(
-            "{}{}{}.{}",
-            cache_dir.path().to_str().unwrap(),
-            std::path::MAIN_SEPARATOR,
-            "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
-            "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589"
-        )
-    );
+struct Fixture<'a> {
+    url: String,
+    get: MockRef<'a>,
+    head: MockRef<'a>,
 }
 
-#[test]
-fn test_url_to_filename_no_etag() {
-    let cache_dir = tempdir().unwrap();
-    let cache = Cache::builder()
-        .dir(cache_dir.path().to_owned())
-        .build()
-        .unwrap();
-
-    let resource = "http://localhost:5000/foo.txt";
-    assert_eq!(
-        cache
-            .resource_to_filepath(resource, &None, None, None)
-            .to_str()
-            .unwrap(),
-        format!(
-            "{}{}{}",
-            cache_dir.path().to_str().unwrap(),
-            std::path::MAIN_SEPARATOR,
-            "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
-        )
-    );
+impl<'a> Fixture<'a> {
+    fn load(server: &'a MockServer, fixture_path: &'a str, etag: &'a str) -> Self {
+        let mut local_path = PathBuf::new();
+        local_path.push(".");
+        for part in fixture_path.split('/') {
+            local_path.push(part);
+        }
+        let contents = fs::read_to_string(&local_path).unwrap();
+        let resource_get = Mock::new()
+            .expect_method(GET)
+            .expect_path(&format!("/{}", fixture_path))
+            .return_status(200)
+            .return_header(ETAG_KEY, etag)
+            .return_body(&contents)
+            .create_on(server);
+        let resource_head = Mock::new()
+            .expect_method(HEAD)
+            .expect_path(&format!("/{}", fixture_path))
+            .return_status(200)
+            .return_header(ETAG_KEY, etag)
+            .create_on(server);
+        Fixture {
+            url: server.url(&format!("/{}", fixture_path)),
+            get: resource_get,
+            head: resource_head,
+        }
+    }
 }
 
-#[test]
-fn test_url_to_filename_in_subdir() {
-    let cache_dir = tempdir().unwrap();
-    let cache = Cache::builder()
-        .dir(cache_dir.path().to_owned())
-        .build()
-        .unwrap();
-
-    let resource = "http://localhost:5000/foo.txt";
-    assert_eq!(
-        cache
-            .resource_to_filepath(resource, &None, Some("target"), None)
-            .to_str()
-            .unwrap(),
-        format!(
-            "{}{}{}{}{}",
-            cache_dir.path().to_str().unwrap(),
-            std::path::MAIN_SEPARATOR,
-            "target",
-            std::path::MAIN_SEPARATOR,
-            "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
-        )
-    );
-}
-
-#[test]
-fn test_url_to_filename_with_suffix() {
-    let cache_dir = tempdir().unwrap();
-    let cache = Cache::builder()
-        .dir(cache_dir.path().to_owned())
-        .build()
-        .unwrap();
-
-    let resource = "http://localhost:5000/foo.txt";
-    assert_eq!(
-        cache
-            .resource_to_filepath(resource, &None, Some("target"), Some("-extracted"))
-            .to_str()
-            .unwrap(),
-        format!(
-            "{}{}{}{}{}-extracted",
-            cache_dir.path().to_str().unwrap(),
-            std::path::MAIN_SEPARATOR,
-            "target",
-            std::path::MAIN_SEPARATOR,
-            "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
-        )
-    );
+impl<'a> Drop for Fixture<'a> {
+    fn drop(&mut self) {
+        self.head.delete();
+        self.get.delete();
+    }
 }
 
 #[test]
@@ -133,11 +76,11 @@ fn test_get_cached_path_non_existant_local_file_fails() {
     assert!(result.is_err());
 }
 
-#[with_mock_server]
 #[test]
-fn test_cached_path() {
+fn test_cached_path_remote_file() {
     // For debugging:
     // let _ = env_logger::try_init();
+    let server = MockServer::start();
 
     // Setup cache.
     let cache_dir = tempdir().unwrap();
@@ -147,48 +90,36 @@ fn test_cached_path() {
         .build()
         .unwrap();
 
-    let resource = "http://localhost:5000/resource.txt";
-
     // Mock the resource.
-    let mut mock_1_head = mock(HEAD, "/resource.txt")
-        .return_status(200)
-        .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
-        .create();
-    let mut mock_1_get = mock(GET, "/resource.txt")
-        .return_status(200)
-        .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
-        .return_body("Hello, World!")
-        .create();
+    let fixture = Fixture::load(&server, "test_fixtures/hello.txt", "fake-etag");
+    let resource = fixture.url.as_str();
 
     // Get the cached path.
-    let path = cache.cached_path(&resource[..]).unwrap();
-    assert_eq!(
-        path,
-        cache.resource_to_filepath(&resource, &Some(String::from("fake-etag")), None, None)
-    );
+    let path = cache.cached_path(resource).unwrap();
 
-    assert_eq!(mock_1_head.times_called(), 1);
-    assert_eq!(mock_1_get.times_called(), 1);
+    assert_eq!(fixture.head.times_called(), 1);
+    assert_eq!(fixture.get.times_called(), 1);
 
     // Ensure the file and meta exist.
     assert!(path.is_file());
     assert!(Meta::meta_path(&path).is_file());
+    let mut meta = Meta::from_cache(&path).unwrap();
+    assert_eq!(meta.etag.as_deref(), Some("fake-etag"));
 
     // Ensure the contents of the file are correct.
-    let contents = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(&contents[..], "Hello, World!");
+    let contents = fs::read_to_string(&path).unwrap().replace("\r\n", "\n");
+    assert_eq!(&contents, "Hello, World!\n");
 
     // When we attempt to get the resource again, the cache should still be fresh.
-    let mut meta = Meta::from_cache(&path).unwrap();
     assert!(meta.is_fresh(None));
-    let same_path = cache.cached_path(&resource[..]).unwrap();
+    let same_path = cache.cached_path(resource).unwrap();
     assert_eq!(same_path, path);
     assert!(path.is_file());
     assert!(Meta::meta_path(&path).is_file());
 
     // Didn't have to call HEAD or GET again.
-    assert_eq!(mock_1_head.times_called(), 1);
-    assert_eq!(mock_1_get.times_called(), 1);
+    assert_eq!(fixture.head.times_called(), 1);
+    assert_eq!(fixture.get.times_called(), 1);
 
     // Now expire the resource to continue testing.
     meta.expires = None;
@@ -203,35 +134,22 @@ fn test_cached_path() {
     // After calling again when the resource is no longer fresh, the ETAG
     // should have been queried again with HEAD, but the resource should not have been
     // downloaded again with GET.
-    let same_path = cache.cached_path(&resource[..]).unwrap();
+    let same_path = cache.cached_path(resource).unwrap();
     assert_eq!(same_path, path);
     assert!(path.is_file());
     assert!(Meta::meta_path(&path).is_file());
-    assert_eq!(mock_1_head.times_called(), 2);
-    assert_eq!(mock_1_get.times_called(), 1);
+    assert_eq!(fixture.head.times_called(), 2);
+    assert_eq!(fixture.get.times_called(), 1);
 
     // Now update the resource.
-    mock_1_head.delete();
-    mock_1_get.delete();
-    let mock_2_head = mock(HEAD, "/resource.txt")
-        .return_status(200)
-        .return_header(&ETAG_KEY.to_string()[..], "fake-etag-2")
-        .create();
-    let mock_2_get = mock(GET, "/resource.txt")
-        .return_status(200)
-        .return_header(&ETAG_KEY.to_string()[..], "fake-etag-2")
-        .return_body("Well hello again")
-        .create();
+    drop(fixture);
+    let fixture = Fixture::load(&server, "test_fixtures/hello.txt", "fake-etag-2");
 
     // Get the new cached path.
-    let new_path = cache.cached_path(&resource[..]).unwrap();
-    assert_eq!(
-        new_path,
-        cache.resource_to_filepath(&resource, &Some(String::from("fake-etag-2")), None, None)
-    );
+    let new_path = cache.cached_path(&fixture.url).unwrap();
 
-    assert_eq!(mock_2_head.times_called(), 1);
-    assert_eq!(mock_2_get.times_called(), 1);
+    assert_eq!(fixture.head.times_called(), 1);
+    assert_eq!(fixture.get.times_called(), 1);
 
     // This should be different from the old path.
     assert_ne!(path, new_path);
@@ -241,15 +159,15 @@ fn test_cached_path() {
     assert!(Meta::meta_path(&new_path).is_file());
 
     // Ensure the contents of the file are correct.
-    let new_contents = std::fs::read_to_string(&new_path).unwrap();
-    assert_eq!(&new_contents[..], "Well hello again");
+    let new_contents = fs::read_to_string(&new_path).unwrap().replace("\r\n", "\n");
+    assert_eq!(&new_contents, "Hello, World!\n");
 }
 
-#[with_mock_server]
 #[test]
-fn test_cached_path_in_subdir() {
+fn test_cached_path_remote_file_in_subdir() {
     // For debugging:
     // let _ = env_logger::try_init();
+    let server = MockServer::start();
 
     // Setup cache.
     let cache_dir = tempdir().unwrap();
@@ -258,43 +176,20 @@ fn test_cached_path_in_subdir() {
         .build()
         .unwrap();
 
-    let resource = "http://localhost:5000/resource.txt";
-
     // Mock the resource.
-    let mock_1_head = mock(HEAD, "/resource.txt")
-        .return_status(200)
-        .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
-        .create();
-    let mock_1_get = mock(GET, "/resource.txt")
-        .return_status(200)
-        .return_header(&ETAG_KEY.to_string()[..], "fake-etag")
-        .return_body("Hello, World!")
-        .create();
+    let fixture = Fixture::load(&server, "test_fixtures/hello.txt", "fake-etag");
 
     // Get the cached path.
     let path = cache
-        .cached_path_with_options(&resource[..], &Options::default().subdir("target"))
+        .cached_path_with_options(&fixture.url, &Options::default().subdir("target"))
         .unwrap();
-    assert_eq!(
-        path,
-        cache.resource_to_filepath(
-            &resource,
-            &Some(String::from("fake-etag")),
-            Some("target"),
-            None
-        )
-    );
 
-    assert_eq!(mock_1_head.times_called(), 1);
-    assert_eq!(mock_1_get.times_called(), 1);
+    assert_eq!(fixture.head.times_called(), 1);
+    assert_eq!(fixture.get.times_called(), 1);
 
     // Ensure the file and meta exist.
     assert!(path.is_file());
     assert!(Meta::meta_path(&path).is_file());
-
-    // Ensure the contents of the file are correct.
-    let contents = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(&contents[..], "Hello, World!");
 }
 
 #[test]
