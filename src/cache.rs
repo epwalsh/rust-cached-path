@@ -572,7 +572,7 @@ impl Cache {
         }
     }
 
-    pub(crate) fn resource_to_filepath(
+    fn resource_to_filepath(
         &self,
         resource: &str,
         etag: &Option<String>,
@@ -600,5 +600,110 @@ impl Cache {
         } else {
             self.dir.join(filepath)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_url_to_filename_with_etag() {
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::builder()
+            .dir(cache_dir.path().to_owned())
+            .build()
+            .unwrap();
+
+        let resource = "http://localhost:5000/foo.txt";
+        let etag = String::from("abcd");
+
+        assert_eq!(
+            cache
+                .resource_to_filepath(resource, &Some(etag), None, None)
+                .to_str()
+                .unwrap(),
+            format!(
+                "{}{}{}.{}",
+                cache_dir.path().to_str().unwrap(),
+                std::path::MAIN_SEPARATOR,
+                "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
+                "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589"
+            )
+        );
+    }
+
+    #[test]
+    fn test_url_to_filename_no_etag() {
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::builder()
+            .dir(cache_dir.path().to_owned())
+            .build()
+            .unwrap();
+
+        let resource = "http://localhost:5000/foo.txt";
+        assert_eq!(
+            cache
+                .resource_to_filepath(resource, &None, None, None)
+                .to_str()
+                .unwrap(),
+            format!(
+                "{}{}{}",
+                cache_dir.path().to_str().unwrap(),
+                std::path::MAIN_SEPARATOR,
+                "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
+            )
+        );
+    }
+
+    #[test]
+    fn test_url_to_filename_in_subdir() {
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::builder()
+            .dir(cache_dir.path().to_owned())
+            .build()
+            .unwrap();
+
+        let resource = "http://localhost:5000/foo.txt";
+        assert_eq!(
+            cache
+                .resource_to_filepath(resource, &None, Some("target"), None)
+                .to_str()
+                .unwrap(),
+            format!(
+                "{}{}{}{}{}",
+                cache_dir.path().to_str().unwrap(),
+                std::path::MAIN_SEPARATOR,
+                "target",
+                std::path::MAIN_SEPARATOR,
+                "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
+            )
+        );
+    }
+
+    #[test]
+    fn test_url_to_filename_with_suffix() {
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::builder()
+            .dir(cache_dir.path().to_owned())
+            .build()
+            .unwrap();
+
+        let resource = "http://localhost:5000/foo.txt";
+        assert_eq!(
+            cache
+                .resource_to_filepath(resource, &None, Some("target"), Some("-extracted"))
+                .to_str()
+                .unwrap(),
+            format!(
+                "{}{}{}{}{}-extracted",
+                cache_dir.path().to_str().unwrap(),
+                std::path::MAIN_SEPARATOR,
+                "target",
+                std::path::MAIN_SEPARATOR,
+                "b5696dbf866311125e26a62bef0125854dd40f010a70be9cfd23634c997c1874",
+            )
+        );
     }
 }
