@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `Meta` struct is no longer public.
 - `Cache::cached_path_in_subdir` is now deprecated.
+- `httpmock` updated and tests refactored.
 
 ### Removed
 
