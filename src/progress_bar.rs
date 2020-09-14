@@ -1,4 +1,5 @@
 use std::io;
+use std::time::Instant;
 
 /// Progress bar types.
 #[derive(Debug, Clone)]
@@ -43,21 +44,21 @@ impl ProgressBar {
                 progress_bar
             }
         };
-        let update_every = match self {
+        let update_delay = match self {
             ProgressBar::Full => {
-                // update every 1 MB.
-                1_000_000
+                // update at most every 200 milliseconds.
+                200
             }
             ProgressBar::Light => {
                 progress_bar.set_style(
                     indicatif::ProgressStyle::default_spinner()
                         .template("[{bytes}, {elapsed}] Downloading...{msg}"),
                 );
-                // update every 100 MB.
-                100_000_000
+                // update at most every 5 seconds.
+                5_000
             }
         };
-        ProgressBarDownloadWrap::new(self.clone(), progress_bar, writer, update_every)
+        ProgressBarDownloadWrap::new(self.clone(), progress_bar, writer, update_delay)
     }
 }
 
@@ -66,8 +67,9 @@ pub(crate) struct ProgressBarDownloadWrap<W> {
     bar: indicatif::ProgressBar,
     wrap: W,
     buffered_progress: usize,
-    update_every: usize,
+    update_delay: u128,
     updates: usize,
+    last_updated: Instant,
 }
 
 impl<W> ProgressBarDownloadWrap<W> {
@@ -75,15 +77,16 @@ impl<W> ProgressBarDownloadWrap<W> {
         level: ProgressBar,
         bar: indicatif::ProgressBar,
         wrap: W,
-        update_every: usize,
+        update_delay: u128,
     ) -> Self {
         Self {
             level,
             bar,
             wrap,
             buffered_progress: 0,
-            update_every,
+            update_delay,
             updates: 0,
+            last_updated: Instant::now(),
         }
     }
 
@@ -117,14 +120,22 @@ impl<W: io::Write> io::Write for ProgressBarDownloadWrap<W> {
         self.wrap.write_all(buf).map(|()| {
             let inc = buf.len();
             self.buffered_progress += inc;
-            if self.buffered_progress > self.update_every {
-                self.updates += 1;
-                self.bar.inc(self.buffered_progress as u64);
-                if let ProgressBar::Light = self.level {
-                    let msg = ".".repeat(self.updates);
-                    self.bar.set_message(&msg);
+            // Check if we should update the bar every 1 MB.
+            if self.updates == 0 || self.buffered_progress > 1_000_000 {
+                let now = Instant::now();
+                let millis_since_last_update = now.duration_since(self.last_updated).as_millis();
+                // If it's been at least `self.update_delay` milliseconds since the last update,
+                // we should update again.
+                if self.updates == 0 || millis_since_last_update >= self.update_delay {
+                    self.last_updated = now;
+                    self.updates += 1;
+                    self.bar.inc(self.buffered_progress as u64);
+                    if let ProgressBar::Light = self.level {
+                        let msg = ".".repeat(self.updates);
+                        self.bar.set_message(&msg);
+                    }
+                    self.buffered_progress = 0;
                 }
-                self.buffered_progress = 0;
             }
         })
     }
