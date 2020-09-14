@@ -1,10 +1,9 @@
 use anyhow::Result;
+use cached_path::{Cache, Error, Options, ProgressBar};
 use log::debug;
 use std::path::PathBuf;
 use std::time::Duration;
 use structopt::StructOpt;
-
-use cached_path::{Cache, Error, Options};
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -54,6 +53,10 @@ struct Opt {
     #[structopt(long = "offline")]
     /// Only use offline features.
     offline: bool,
+
+    #[structopt(long = "file-friendly-logging")]
+    /// Use a light / file-friendly progress bar for downloads.
+    file_friendly_logging: bool,
 }
 
 fn main() -> Result<()> {
@@ -86,5 +89,8 @@ fn build_cache_from_opt(opt: &Opt) -> Result<Cache, Error> {
     }
     cache_builder = cache_builder.max_retries(opt.max_retries);
     cache_builder = cache_builder.max_backoff(opt.max_backoff);
+    if !opt.file_friendly_logging {
+        cache_builder = cache_builder.progress_bar(Some(ProgressBar::Full));
+    }
     cache_builder.build()
 }
