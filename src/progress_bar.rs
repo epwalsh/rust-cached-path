@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Write};
 use std::time::Instant;
 
 /// Progress bar types.
@@ -22,11 +22,10 @@ impl Default for ProgressBar {
 }
 
 impl ProgressBar {
-    pub(crate) fn get_download_wrapper<W: io::Write>(
-        &self,
+    pub(crate) fn get_full_progress_bar(
+        resource: &str,
         content_length: Option<u64>,
-        writer: W,
-    ) -> ProgressBarDownloadWrap<W> {
+    ) -> indicatif::ProgressBar {
         let progress_bar = match content_length {
             Some(length) => {
                 let progress_bar = indicatif::ProgressBar::new(length);
@@ -44,99 +43,82 @@ impl ProgressBar {
                 progress_bar
             }
         };
-        let update_delay = match self {
-            ProgressBar::Full => {
-                // update at most every 200 milliseconds.
-                200
-            }
-            ProgressBar::Light => {
-                progress_bar.set_style(
-                    indicatif::ProgressStyle::default_spinner()
-                        .template("[{bytes}, {elapsed}] Downloading...{msg}"),
-                );
-                // update at most every 5 seconds.
-                5_000
-            }
-        };
-        ProgressBarDownloadWrap::new(self.clone(), progress_bar, writer, update_delay)
+        progress_bar.println(format!("Downloading {}", resource));
+        progress_bar.set_draw_delta(1_000_000);
+        progress_bar
+    }
+
+    pub(crate) fn get_light_download_wrapper<W: Write>(
+        resource: &str,
+        content_length: Option<u64>,
+        writer: W,
+    ) -> LightDownloadWrapper<W> {
+        LightDownloadWrapper::new(resource, content_length, writer)
     }
 }
 
-pub(crate) struct ProgressBarDownloadWrap<W> {
-    level: ProgressBar,
-    bar: indicatif::ProgressBar,
-    wrap: W,
-    buffered_progress: usize,
-    update_delay: u128,
-    updates: usize,
-    last_updated: Instant,
+#[derive(Debug)]
+pub(crate) struct LightDownloadWrapper<W: Write> {
+    start_time: Instant,
+    bytes: usize,
+    bytes_since_last_update: usize,
+    writer: W,
 }
 
-impl<W> ProgressBarDownloadWrap<W> {
-    pub(crate) fn new(
-        level: ProgressBar,
-        bar: indicatif::ProgressBar,
-        wrap: W,
-        update_delay: u128,
-    ) -> Self {
+impl<W: Write> LightDownloadWrapper<W> {
+    pub(crate) fn new(resource: &str, content_length: Option<u64>, writer: W) -> Self {
+        if let Some(size) = content_length {
+            eprint!(
+                "Downloading {} [{}]...",
+                resource,
+                indicatif::HumanBytes(size)
+            );
+        } else {
+            eprint!("Downloading {}...", resource);
+        }
+        io::stderr().flush().ok();
         Self {
-            level,
-            bar,
-            wrap,
-            buffered_progress: 0,
-            update_delay,
-            updates: 0,
-            last_updated: Instant::now(),
+            start_time: Instant::now(),
+            bytes: 0,
+            bytes_since_last_update: 0,
+            writer,
         }
     }
 
-    pub(crate) fn finalize(&self, bytes: u64) {
-        self.bar.set_position(bytes);
-        match self.level {
-            ProgressBar::Light => {
-                let msg = format!("{} ✓ Done!", ".".repeat(self.updates));
-                self.bar.set_message(&msg);
-            }
-            _ => self.bar.set_message("✓ Done!"),
-        };
-        self.bar.finish_at_current_pos();
+    pub(crate) fn finish(&self) {
+        let duration = Instant::now().duration_since(self.start_time);
+        eprint!(
+            " ✓ Done! Finished in {}\n",
+            indicatif::HumanDuration(duration)
+        );
+        io::stderr().flush().ok();
     }
 }
 
-impl<W: io::Write> io::Write for ProgressBarDownloadWrap<W> {
+impl<W: Write> Write for LightDownloadWrapper<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.wrap.write(buf)
+        self.writer.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.wrap.flush()
+        self.writer.flush()
     }
 
     fn write_vectored(&mut self, bufs: &[io::IoSlice]) -> io::Result<usize> {
-        self.wrap.write_vectored(bufs)
+        self.writer.write_vectored(bufs)
     }
 
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.wrap.write_all(buf).map(|()| {
-            let inc = buf.len();
-            self.buffered_progress += inc;
-            // Check if we should update the bar every 1 MB.
-            if self.updates == 0 || self.buffered_progress > 1_000_000 {
-                let now = Instant::now();
-                let millis_since_last_update = now.duration_since(self.last_updated).as_millis();
-                // If it's been at least `self.update_delay` milliseconds since the last update,
-                // we should update again.
-                if self.updates == 0 || millis_since_last_update >= self.update_delay {
-                    self.last_updated = now;
-                    self.updates += 1;
-                    self.bar.inc(self.buffered_progress as u64);
-                    if let ProgressBar::Light = self.level {
-                        let msg = ".".repeat(self.updates);
-                        self.bar.set_message(&msg);
-                    }
-                    self.buffered_progress = 0;
-                }
+        self.writer.write_all(buf).map(|()| {
+            let chunk_size = buf.len();
+            self.bytes_since_last_update += chunk_size;
+            // Update every 100 MBs.
+            if self.bytes_since_last_update > 100_000_000 {
+                eprint!(".");
+                io::stderr().flush().ok();
+                self.bytes_since_last_update = 0;
             }
+            self.bytes += chunk_size;
         })
     }
 }

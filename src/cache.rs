@@ -515,16 +515,32 @@ impl Cache {
 
         info!("Starting download of {}", url);
 
-        if let Some(progress_bar) = &self.progress_bar {
-            let mut download_wrapper =
-                progress_bar.get_download_wrapper(response.content_length(), tempfile_write_handle);
-            let bytes = response.copy_to(&mut download_wrapper)?;
-            download_wrapper.finalize(bytes);
+        let bytes = if let Some(progress_bar) = &self.progress_bar {
+            match progress_bar {
+                ProgressBar::Full => {
+                    let download_bar =
+                        ProgressBar::get_full_progress_bar(resource, response.content_length());
+                    let bytes =
+                        response.copy_to(&mut download_bar.wrap_write(tempfile_write_handle))?;
+                    download_bar.finish();
+                    bytes
+                }
+                ProgressBar::Light => {
+                    let mut download_wrapper = ProgressBar::get_light_download_wrapper(
+                        resource,
+                        response.content_length(),
+                        tempfile_write_handle,
+                    );
+                    let bytes = response.copy_to(&mut download_wrapper)?;
+                    download_wrapper.finish();
+                    bytes
+                }
+            }
         } else {
-            let bytes = response.copy_to(&mut tempfile_write_handle)?;
-            info!("Downloaded {} bytes", bytes);
-        }
+            response.copy_to(&mut tempfile_write_handle)?
+        };
 
+        info!("Downloaded {} bytes", bytes);
         debug!("Writing meta file");
 
         let meta = Meta::new(
