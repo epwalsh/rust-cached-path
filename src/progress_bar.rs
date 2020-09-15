@@ -47,6 +47,9 @@ impl ProgressBar {
             }
         };
         progress_bar.println(format!("Downloading {}", resource));
+        // Update every 1 MBs.
+        // NOTE: If we don't set this, the updates happen WAY too frequently and it makes downloads
+        // take about twice as long.
         progress_bar.set_draw_delta(1_000_000);
         progress_bar
     }
