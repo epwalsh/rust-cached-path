@@ -1,5 +1,5 @@
-use anyhow::Result;
 use cached_path::{Cache, Error, Options, ProgressBar};
+use color_eyre::eyre::Result;
 use log::debug;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -60,6 +60,7 @@ struct Opt {
 }
 
 fn main() -> Result<()> {
+    color_eyre::install()?;
     env_logger::init();
     let opt = Opt::from_args();
 

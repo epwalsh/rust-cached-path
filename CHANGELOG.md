@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- Switched to `color-eyre` for error handling in the CLI.
+
 ## [v0.4.5](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.5) - 2020-09-15
 
 ### Added
