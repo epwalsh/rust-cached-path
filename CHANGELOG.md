@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v0.4.5](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.5) - 2020-09-15
+
 ### Added
 
 - Added a method `CacheBuilder::progress_bar` to set the progress bar type, or to disable the progess bar entirely. The options are `ProgressBar::Light` and `ProgressBar::Full`. The default when using `cached-path` as a library is `ProgressBar::Light`, while the default from the command-line is `ProgressBar::Full`. You can also disable the progress bar from the command-line by passing the  "-q" / "--quietly" flag.
