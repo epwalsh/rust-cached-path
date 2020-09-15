@@ -1,6 +1,5 @@
 use fs2::FileExt;
 use glob::glob;
-use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error, info, warn};
 use rand::distributions::{Distribution, Uniform};
 use reqwest::blocking::{Client, ClientBuilder};
@@ -15,7 +14,7 @@ use tempfile::NamedTempFile;
 
 use crate::archives::{extract_archive, ArchiveFormat};
 use crate::utils::hash_str;
-use crate::{meta::Meta, Error};
+use crate::{meta::Meta, Error, ProgressBar};
 
 /// Builder to facilitate creating [`Cache`](struct.Cache.html) objects.
 #[derive(Debug)]
@@ -31,6 +30,7 @@ struct Config {
     max_backoff: u32,
     freshness_lifetime: Option<u64>,
     offline: bool,
+    progress_bar: Option<ProgressBar>,
 }
 
 impl CacheBuilder {
@@ -44,6 +44,7 @@ impl CacheBuilder {
                 max_backoff: 5000,
                 freshness_lifetime: None,
                 offline: false,
+                progress_bar: Some(ProgressBar::default()),
             },
         }
     }
@@ -109,6 +110,14 @@ impl CacheBuilder {
         self
     }
 
+    /// Set the type of progress bar to use.
+    ///
+    /// The default is `Some(ProgressBar::Light)`.
+    pub fn progress_bar(mut self, progress_bar: Option<ProgressBar>) -> CacheBuilder {
+        self.config.progress_bar = progress_bar;
+        self
+    }
+
     /// Build the `Cache` object.
     pub fn build(self) -> Result<Cache, Error> {
         let dir = self.config.dir.unwrap_or_else(|| {
@@ -127,6 +136,7 @@ impl CacheBuilder {
             max_backoff: self.config.max_backoff,
             freshness_lifetime: self.config.freshness_lifetime,
             offline: self.config.offline,
+            progress_bar: self.config.progress_bar,
         })
     }
 }
@@ -186,6 +196,9 @@ pub struct Cache {
     ///
     /// If set to `true`, no HTTP calls will be made.
     offline: bool,
+    /// The verbosity level of the progress bar.
+    progress_bar: Option<ProgressBar>,
+    /// The HTTP client used to fetch remote resources.
     http_client: Client,
 }
 
@@ -498,18 +511,36 @@ impl Cache {
         // Otherwise if we wrote directly to the cache file and the download got
         // interrupted we could be left with a corrupted cache file.
         let tempfile = NamedTempFile::new_in(path.parent().unwrap())?;
-        let tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path())?;
+        let mut tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path())?;
 
         info!("Starting download of {}", url);
 
-        let spinner = ProgressBar::new_spinner();
-        spinner.set_style(
-            ProgressStyle::default_spinner()
-                .template("{spinner} {bytes} [{bytes_per_sec}, {elapsed}]"),
-        );
-        spinner.set_draw_delta(100_000);
-        response.copy_to(&mut spinner.wrap_write(tempfile_write_handle))?;
+        let bytes = if let Some(progress_bar) = &self.progress_bar {
+            match progress_bar {
+                ProgressBar::Full => {
+                    let download_bar =
+                        ProgressBar::get_full_progress_bar(resource, response.content_length());
+                    let bytes =
+                        response.copy_to(&mut download_bar.wrap_write(tempfile_write_handle))?;
+                    download_bar.finish();
+                    bytes
+                }
+                ProgressBar::Light => {
+                    let mut download_wrapper = ProgressBar::get_light_download_wrapper(
+                        resource,
+                        response.content_length(),
+                        tempfile_write_handle,
+                    );
+                    let bytes = response.copy_to(&mut download_wrapper)?;
+                    download_wrapper.finish();
+                    bytes
+                }
+            }
+        } else {
+            response.copy_to(&mut tempfile_write_handle)?
+        };
 
+        info!("Downloaded {} bytes", bytes);
         debug!("Writing meta file");
 
         let meta = Meta::new(
