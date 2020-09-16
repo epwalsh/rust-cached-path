@@ -7,51 +7,24 @@ use std::time::Instant;
 /// [`CacheBuilder::progress_bar()`](struct.CacheBuilder.html#method.progress_bar).
 #[derive(Debug, Clone)]
 pub enum ProgressBar {
-    /// Progress bar with the highest verbosity.
-    ///
-    /// This should only be used if you're running `cached-path` from an interactive terminal.
+    /// Gives pretty, verbose progress bars.
     Full,
-    /// Progress bar with that produces minimal output.
+    /// Gives progress bars with minimal output.
     ///
     /// This is a good option to use if your output is being captured to a file but you
-    /// still want to see a progress bar for downloads.
+    /// still want to see progress updates.
     Light,
 }
 
 impl Default for ProgressBar {
     fn default() -> Self {
-        ProgressBar::Light
+        ProgressBar::Full
     }
 }
 
 impl ProgressBar {
-    pub(crate) fn get_full_progress_bar(
-        resource: &str,
-        content_length: Option<u64>,
-    ) -> indicatif::ProgressBar {
-        let progress_bar = match content_length {
-            Some(length) => {
-                let progress_bar = indicatif::ProgressBar::new(length);
-                progress_bar.set_style(indicatif::ProgressStyle::default_spinner().template(
-                    "{percent}% {wide_bar:.cyan/blue} {bytes_per_sec},<{eta} [{bytes}, {elapsed}]",
-                ));
-                progress_bar
-            }
-            None => {
-                let progress_bar = indicatif::ProgressBar::new_spinner();
-                progress_bar.set_style(
-                    indicatif::ProgressStyle::default_spinner()
-                        .template("{spinner} {bytes_per_sec} [{bytes}, {elapsed}] {msg}"),
-                );
-                progress_bar
-            }
-        };
-        progress_bar.println(format!("Downloading {}", resource));
-        // Update every 1 MBs.
-        // NOTE: If we don't set this, the updates happen WAY too frequently and it makes downloads
-        // take about twice as long.
-        progress_bar.set_draw_delta(1_000_000);
-        progress_bar
+    pub(crate) fn get_download_wrapper(content_length: Option<u64>) -> DownloadWrapper {
+        DownloadWrapper::new(content_length)
     }
 
     pub(crate) fn get_light_download_wrapper<W: Write>(
@@ -60,6 +33,72 @@ impl ProgressBar {
         writer: W,
     ) -> LightDownloadWrapper<W> {
         LightDownloadWrapper::new(resource, content_length, writer)
+    }
+}
+
+pub(crate) struct DownloadWrapper {
+    bar: indicatif::ProgressBar,
+}
+
+impl DownloadWrapper {
+    pub(crate) fn new(content_length: Option<u64>) -> Self {
+        let bar = match content_length {
+            Some(length) => {
+                let bar = indicatif::ProgressBar::new(length);
+                bar.set_style(
+                    indicatif::ProgressStyle::default_bar()
+                    .progress_chars("=>-")
+                    .template(
+                        "{msg:.bold.cyan/blue} [{bar:20.cyan/blue}][{percent}%] {bytes}/{total_bytes:.bold} |{bytes_per_sec}|",
+                    )
+                );
+                bar
+            }
+            None => {
+                let bar = indicatif::ProgressBar::new_spinner();
+                bar.set_style(
+                    indicatif::ProgressStyle::default_bar()
+                        .tick_strings(&[
+                            "⠁⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖",
+                            "⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐",
+                            "⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒",
+                            "⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋",
+                            "⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈",
+                            "⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈⠉",
+                            "⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈⠉⠙⠚",
+                            "⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈⠉⠙⠚⠒⠂",
+                            "⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈⠉⠙⠚⠒⠂⠂⠒",
+                            "⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈⠉⠙⠚⠒⠂⠂⠒⠲⠴",
+                            "⠒⠐⠐⠒⠓⠋⠉⠈⠈⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄",
+                            "⠐⠒⠓⠋⠉⠈⠈⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤",
+                            "⠓⠋⠉⠈⠈⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠",
+                        ])
+                        .template(
+                            "{msg:.bold.cyan/blue} [{spinner:.cyan/blue}] {bytes:.bold} |{bytes_per_sec}|",
+                        ),
+                );
+                bar
+            }
+        };
+        bar.set_message("Downloading");
+        // Update every 1 MBs.
+        // NOTE: If we don't set this, the updates happen WAY too frequently and it makes downloads
+        // take about twice as long.
+        bar.set_draw_delta(1_000_000);
+        Self { bar }
+    }
+
+    pub(crate) fn wrap_write<W: Write>(&self, write: W) -> impl Write {
+        self.bar.wrap_write(write)
+    }
+
+    pub(crate) fn finish(&self) {
+        self.bar.set_message("Downloaded");
+        self.bar.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("{msg:.green.bold} {total_bytes:.bold} in {elapsed}"),
+        );
+        self.bar.finish_at_current_pos();
     }
 }
 
@@ -91,6 +130,17 @@ impl<W: Write> LightDownloadWrapper<W> {
         }
     }
 
+    pub(crate) fn tick(&mut self, chunk_size: usize) {
+        self.bytes_since_last_update += chunk_size;
+        // Update every 100 MBs.
+        if self.bytes_since_last_update > 100_000_000 {
+            eprint!(".");
+            io::stderr().flush().ok();
+            self.bytes_since_last_update = 0;
+        }
+        self.bytes += chunk_size;
+    }
+
     pub(crate) fn finish(&self) {
         let duration = Instant::now().duration_since(self.start_time);
         eprint!(
@@ -116,15 +166,7 @@ impl<W: Write> Write for LightDownloadWrapper<W> {
 
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
         self.writer.write_all(buf).map(|()| {
-            let chunk_size = buf.len();
-            self.bytes_since_last_update += chunk_size;
-            // Update every 100 MBs.
-            if self.bytes_since_last_update > 100_000_000 {
-                eprint!(".");
-                io::stderr().flush().ok();
-                self.bytes_since_last_update = 0;
-            }
-            self.bytes += chunk_size;
+            self.tick(buf.len());
         })
     }
 }

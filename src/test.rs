@@ -56,6 +56,7 @@ fn test_get_cached_path_local_file() {
     let cache_dir = tempdir().unwrap();
     let cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
+        .progress_bar(None)
         .build()
         .unwrap();
 
@@ -69,6 +70,7 @@ fn test_get_cached_path_non_existant_local_file_fails() {
     let cache_dir = tempdir().unwrap();
     let cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
+        .progress_bar(None)
         .build()
         .unwrap();
 
@@ -86,6 +88,7 @@ fn test_cached_path_remote_file() {
     let cache_dir = tempdir().unwrap();
     let cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
+        .progress_bar(None)
         .freshness_lifetime(300)
         .build()
         .unwrap();
@@ -128,6 +131,7 @@ fn test_cached_path_remote_file() {
     // Create a new cache without a freshness lifetime.
     let cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
+        .progress_bar(None)
         .build()
         .unwrap();
 
@@ -173,6 +177,7 @@ fn test_cached_path_remote_file_in_subdir() {
     let cache_dir = tempdir().unwrap();
     let cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
+        .progress_bar(None)
         .build()
         .unwrap();
 
@@ -197,6 +202,7 @@ fn test_extract_tar_gz() {
     let cache_dir = tempdir().unwrap();
     let cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
+        .progress_bar(None)
         .build()
         .unwrap();
 
@@ -228,6 +234,7 @@ fn test_extract_zip() {
     let cache_dir = tempdir().unwrap();
     let cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
+        .progress_bar(None)
         .build()
         .unwrap();
 
@@ -259,6 +266,7 @@ fn test_extract_in_subdir() {
     let cache_dir = tempdir().unwrap();
     let cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
+        .progress_bar(None)
         .build()
         .unwrap();
 

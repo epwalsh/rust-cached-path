@@ -112,7 +112,7 @@ impl CacheBuilder {
 
     /// Set the type of progress bar to use.
     ///
-    /// The default is `Some(ProgressBar::Light)`.
+    /// The default is `Some(ProgressBar::Full)`.
     pub fn progress_bar(mut self, progress_bar: Option<ProgressBar>) -> CacheBuilder {
         self.config.progress_bar = progress_bar;
         self
@@ -518,11 +518,11 @@ impl Cache {
         let bytes = if let Some(progress_bar) = &self.progress_bar {
             match progress_bar {
                 ProgressBar::Full => {
-                    let download_bar =
-                        ProgressBar::get_full_progress_bar(resource, response.content_length());
-                    let bytes =
-                        response.copy_to(&mut download_bar.wrap_write(tempfile_write_handle))?;
-                    download_bar.finish();
+                    let download_wrapper =
+                        ProgressBar::get_download_wrapper(response.content_length());
+                    let bytes = response
+                        .copy_to(&mut download_wrapper.wrap_write(tempfile_write_handle))?;
+                    download_wrapper.finish();
                     bytes
                 }
                 ProgressBar::Light => {
