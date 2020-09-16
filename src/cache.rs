@@ -516,26 +516,14 @@ impl Cache {
         info!("Starting download of {}", url);
 
         let bytes = if let Some(progress_bar) = &self.progress_bar {
-            match progress_bar {
-                ProgressBar::Full => {
-                    let download_wrapper =
-                        ProgressBar::get_download_wrapper(response.content_length());
-                    let bytes = response
-                        .copy_to(&mut download_wrapper.wrap_write(tempfile_write_handle))?;
-                    download_wrapper.finish();
-                    bytes
-                }
-                ProgressBar::Light => {
-                    let mut download_wrapper = ProgressBar::get_light_download_wrapper(
-                        resource,
-                        response.content_length(),
-                        tempfile_write_handle,
-                    );
-                    let bytes = response.copy_to(&mut download_wrapper)?;
-                    download_wrapper.finish();
-                    bytes
-                }
-            }
+            let mut download_wrapper = progress_bar.wrap_download(
+                resource,
+                response.content_length(),
+                tempfile_write_handle,
+            );
+            let bytes = response.copy_to(&mut download_wrapper)?;
+            download_wrapper.finish();
+            bytes
         } else {
             response.copy_to(&mut tempfile_write_handle)?
         };

@@ -23,24 +23,69 @@ impl Default for ProgressBar {
 }
 
 impl ProgressBar {
-    pub(crate) fn get_download_wrapper(content_length: Option<u64>) -> DownloadWrapper {
-        DownloadWrapper::new(content_length)
-    }
-
-    pub(crate) fn get_light_download_wrapper<W: Write>(
+    pub(crate) fn wrap_download<W: Write>(
+        &self,
         resource: &str,
         content_length: Option<u64>,
         writer: W,
-    ) -> LightDownloadWrapper<W> {
-        LightDownloadWrapper::new(resource, content_length, writer)
+    ) -> DownloadWrapper<W> {
+        let bar: Box<dyn DownloadBar> = match self {
+            ProgressBar::Full => Box::new(FullDownloadBar::new(content_length)),
+            ProgressBar::Light => Box::new(LightDownloadBar::new(resource, content_length)),
+        };
+        DownloadWrapper::new(bar, writer)
     }
 }
 
-pub(crate) struct DownloadWrapper {
+pub(crate) struct DownloadWrapper<W: Write> {
+    bar: Box<dyn DownloadBar>,
+    writer: W,
+}
+
+impl<W> DownloadWrapper<W>
+where
+    W: Write,
+{
+    fn new(bar: Box<dyn DownloadBar>, writer: W) -> Self {
+        Self { bar, writer }
+    }
+
+    pub(crate) fn finish(&self) {
+        self.bar.finish();
+    }
+}
+
+impl<W: Write> Write for DownloadWrapper<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.writer.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer.flush()
+    }
+
+    fn write_vectored(&mut self, bufs: &[io::IoSlice]) -> io::Result<usize> {
+        self.writer.write_vectored(bufs)
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.writer.write_all(buf).map(|()| {
+            self.bar.tick(buf.len());
+        })
+    }
+}
+
+trait DownloadBar {
+    fn tick(&mut self, chunk_size: usize);
+
+    fn finish(&self);
+}
+
+pub(crate) struct FullDownloadBar {
     bar: indicatif::ProgressBar,
 }
 
-impl DownloadWrapper {
+impl FullDownloadBar {
     pub(crate) fn new(content_length: Option<u64>) -> Self {
         let bar = match content_length {
             Some(length) => {
@@ -87,12 +132,14 @@ impl DownloadWrapper {
         bar.set_draw_delta(1_000_000);
         Self { bar }
     }
+}
 
-    pub(crate) fn wrap_write<W: Write>(&self, write: W) -> impl Write {
-        self.bar.wrap_write(write)
+impl DownloadBar for FullDownloadBar {
+    fn tick(&mut self, chunk_size: usize) {
+        self.bar.inc(chunk_size as u64);
     }
 
-    pub(crate) fn finish(&self) {
+    fn finish(&self) {
         self.bar.set_message("Downloaded");
         self.bar.set_style(
             indicatif::ProgressStyle::default_bar()
@@ -102,16 +149,14 @@ impl DownloadWrapper {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct LightDownloadWrapper<W: Write> {
+pub(crate) struct LightDownloadBar {
     start_time: Instant,
     bytes: usize,
     bytes_since_last_update: usize,
-    writer: W,
 }
 
-impl<W: Write> LightDownloadWrapper<W> {
-    pub(crate) fn new(resource: &str, content_length: Option<u64>, writer: W) -> Self {
+impl LightDownloadBar {
+    pub(crate) fn new(resource: &str, content_length: Option<u64>) -> Self {
         if let Some(size) = content_length {
             eprint!(
                 "Downloading {} [{}]...",
@@ -126,11 +171,12 @@ impl<W: Write> LightDownloadWrapper<W> {
             start_time: Instant::now(),
             bytes: 0,
             bytes_since_last_update: 0,
-            writer,
         }
     }
+}
 
-    pub(crate) fn tick(&mut self, chunk_size: usize) {
+impl DownloadBar for LightDownloadBar {
+    fn tick(&mut self, chunk_size: usize) {
         self.bytes_since_last_update += chunk_size;
         // Update every 100 MBs.
         if self.bytes_since_last_update > 100_000_000 {
@@ -141,32 +187,12 @@ impl<W: Write> LightDownloadWrapper<W> {
         self.bytes += chunk_size;
     }
 
-    pub(crate) fn finish(&self) {
+    fn finish(&self) {
         let duration = Instant::now().duration_since(self.start_time);
         eprint!(
             " ✓ Done! Finished in {}\n",
             indicatif::HumanDuration(duration)
         );
         io::stderr().flush().ok();
-    }
-}
-
-impl<W: Write> Write for LightDownloadWrapper<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.writer.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.writer.flush()
-    }
-
-    fn write_vectored(&mut self, bufs: &[io::IoSlice]) -> io::Result<usize> {
-        self.writer.write_vectored(bufs)
-    }
-
-    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.writer.write_all(buf).map(|()| {
-            self.tick(buf.len());
-        })
     }
 }
