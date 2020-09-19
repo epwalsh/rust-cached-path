@@ -109,6 +109,12 @@ jobs:
         command: test
         args: --doc --all-features
 
+    - name: Code coverage
+      uses: actions-rs/tarpaulin@v0.1
+      if: matrix.os == 'ubuntu-latest'
+      with:
+        args: --all-features
+
   publish:
     name: Publish
     needs: [build]
