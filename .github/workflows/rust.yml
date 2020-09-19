@@ -116,6 +116,7 @@ jobs:
         args: --all-features
 
     - name: Upload to codecov.io
+      if: matrix.os == 'ubuntu-latest'
       uses: codecov/codecov-action@v1
 
   publish:
