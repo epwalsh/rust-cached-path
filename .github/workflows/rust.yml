@@ -88,32 +88,11 @@ jobs:
         command: build
         args: --all-features
 
-    - name: Run unit tests
-      if: always()
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --lib --all-features
-
-    - name: Run integration tests
-      if: always()
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --test cli
-
-    - name: Run doc tests
-      if: always()
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --doc --all-features
-
     - name: Calculate test coverage
       uses: actions-rs/tarpaulin@v0.1
       if: matrix.os == 'ubuntu-latest'
       with:
-        args: --all-features
+        args: --all-features --tests --doc --ignore-tests
 
     - name: Upload to codecov.io
       if: matrix.os == 'ubuntu-latest'
