@@ -35,7 +35,7 @@ thiserror = "1.0"
 flate2 = "1.0"
 tar = "0.4"
 zip = "0.5"
-zip-extensions = "0.5"
+zip-extensions = "0.6"
 indicatif = "0.15"
 env_logger = { version = "0.8", optional = true }
 structopt = { version = "0.3", optional = true }
