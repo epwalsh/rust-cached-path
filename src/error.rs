@@ -54,12 +54,7 @@ impl Error {
     pub(crate) fn is_retriable(&self) -> bool {
         match self {
             Error::HttpTimeoutError => true,
-            Error::HttpStatusError(status_code) => match status_code {
-                502 => true,
-                503 => true,
-                504 => true,
-                _ => false,
-            },
+            Error::HttpStatusError(status_code) => matches!(status_code, 502 | 503 | 504),
             _ => false,
         }
     }
