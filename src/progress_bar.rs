@@ -189,8 +189,8 @@ impl DownloadBar for LightDownloadBar {
 
     fn finish(&self) {
         let duration = Instant::now().duration_since(self.start_time);
-        eprint!(
-            " ✓ Done! Finished in {}\n",
+        eprintln!(
+            " ✓ Done! Finished in {}",
             indicatif::HumanDuration(duration)
         );
         io::stderr().flush().ok();

@@ -114,7 +114,7 @@ pub use crate::progress_bar::ProgressBar;
 /// it's more efficient to create and use a single `Cache` instead.
 pub fn cached_path(resource: &str) -> Result<PathBuf, Error> {
     let cache = Cache::builder().build()?;
-    Ok(cache.cached_path(resource)?)
+    cache.cached_path(resource)
 }
 
 /// Get the cached path to a resource using the given options.
@@ -126,7 +126,7 @@ pub fn cached_path(resource: &str) -> Result<PathBuf, Error> {
 /// it's more efficient to create and use a single `Cache` instead.
 pub fn cached_path_with_options(resource: &str, options: &Options) -> Result<PathBuf, Error> {
     let cache = Cache::builder().build()?;
-    Ok(cache.cached_path_with_options(resource, options)?)
+    cache.cached_path_with_options(resource, options)
 }
 
 #[cfg(test)]
