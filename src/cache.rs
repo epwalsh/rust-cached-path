@@ -414,7 +414,7 @@ impl Cache {
             // dangling ones.
             info!("Cached version of {} is up-to-date", resource);
             filelock.unlock()?;
-            return Ok(Meta::from_cache(&path)?);
+            return Meta::from_cache(&path);
         }
 
         // No up-to-date version cached, so we have to try downloading it.
