@@ -3,7 +3,7 @@ use glob::glob;
 use log::{debug, error, info, warn};
 use rand::distributions::{Distribution, Uniform};
 use reqwest::blocking::{Client, ClientBuilder};
-use reqwest::header::ETAG;
+use reqwest::header::{ETAG, LAST_MODIFIED};
 use std::default::Default;
 use std::env;
 use std::fs::{self, OpenOptions};
@@ -587,7 +587,18 @@ impl Cache {
                 Ok(None)
             }
         } else {
-            Ok(None)
+            if let Some(last_modified) = response.headers().get(LAST_MODIFIED) {
+                if let Ok(s) = last_modified.to_str() {
+                    debug!("LAST-MODIFIED: {}", s);
+                    Ok(Some(s.into()))
+                } else {
+                    debug!("No LAST-MODIFIED for {}", url);
+                    Ok(None)
+                }
+            } else {
+                debug!("No LAST-MODIFIED for {}", url);
+                Ok(None)
+            }
         }
     }
 
