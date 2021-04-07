@@ -586,19 +586,17 @@ impl Cache {
                 debug!("No ETAG for {}", url);
                 Ok(None)
             }
-        } else {
-            if let Some(last_modified) = response.headers().get(LAST_MODIFIED) {
-                if let Ok(s) = last_modified.to_str() {
-                    debug!("LAST-MODIFIED: {}", s);
-                    Ok(Some(s.into()))
-                } else {
-                    debug!("No LAST-MODIFIED for {}", url);
-                    Ok(None)
-                }
+        } else if let Some(last_modified) = response.headers().get(LAST_MODIFIED) {
+            if let Ok(s) = last_modified.to_str() {
+                debug!("LAST-MODIFIED: {}", s);
+                Ok(Some(s.into()))
             } else {
                 debug!("No LAST-MODIFIED for {}", url);
                 Ok(None)
             }
+        } else {
+            debug!("No LAST-MODIFIED for {}", url);
+            Ok(None)
         }
     }
 
