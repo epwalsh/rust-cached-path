@@ -39,7 +39,7 @@ zip-extensions = "0.6"
 indicatif = "0.16"
 env_logger = { version = "0.9", optional = true }
 structopt = { version = "0.3", optional = true }
-color-eyre = { version = "0.5", optional = true }
+color-eyre = { version = "0.6", optional = true }
 
 [features]
 build-binary = ["env_logger", "structopt", "color-eyre"]
