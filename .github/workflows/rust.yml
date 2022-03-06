@@ -39,6 +39,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
+        tls: ["default-tls", "rustls-tls"]
     steps:
     - uses: actions/checkout@v2
 
@@ -79,28 +80,28 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: clippy
-        args: --all-targets --all-features -- -D warnings
+        args: --all-targets --features build-binary,${{ matrix.tls }} -- -D warnings
 
     - name: Build
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: build
-        args: --all-features
+        args: --features build-binary,${{ matrix.tls }}
 
     - name: Run unit tests
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --lib --all-features
+        args: --lib --features build-binary,${{ matrix.tls }}
 
     - name: Run integration tests
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --test cli
+        args: --test cli --features build-binary,${{ matrix.tls }}
 
     - name: Run doc tests
       if: always()
