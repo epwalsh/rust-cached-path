@@ -465,7 +465,7 @@ impl Cache {
     ) -> Result<Meta, Error> {
         let mut retries: u32 = 0;
         loop {
-            match self.download_resource(resource, &url, path, etag) {
+            match self.download_resource(resource, url, path, etag) {
                 Ok(meta) => {
                     return Ok(meta);
                 }
@@ -549,7 +549,7 @@ impl Cache {
     fn try_get_etag(&self, resource: &str, url: &reqwest::Url) -> Result<Option<String>, Error> {
         let mut retries: u32 = 0;
         loop {
-            match self.get_etag(&url) {
+            match self.get_etag(url) {
                 Ok(etag) => return Ok(etag),
                 Err(err) => {
                     if retries >= self.max_retries {
@@ -599,14 +599,12 @@ impl Cache {
         suffix: Option<&str>,
     ) -> PathBuf {
         let resource_hash = hash_str(resource);
-        let mut filename: String;
-
-        if let Some(tag) = etag {
+        let mut filename = if let Some(tag) = etag {
             let etag_hash = hash_str(&tag[..]);
-            filename = format!("{}.{}", resource_hash, etag_hash);
+            format!("{}.{}", resource_hash, etag_hash)
         } else {
-            filename = resource_hash;
-        }
+            resource_hash
+        };
 
         if let Some(suf) = suffix {
             filename.push_str(suf);

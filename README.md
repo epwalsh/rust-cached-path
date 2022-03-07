@@ -9,10 +9,7 @@ The idea behind `cached-path` is to provide a unified, simple interface for
 accessing both local and remote files. This can be used behind other APIs that need
 to access files agnostic to where they are located.
 
-This is based on
-[`allennlp/common/file_utils.py`](https://github.com/allenai/allennlp/blob/master/allennlp/common/file_utils.py)
-and
-[`transformers/file_utils.py`](https://github.com/huggingface/transformers/blob/master/src/transformers/file_utils.py).
+This is based on the Python library [`allenai/cached_path`](https://github.com/allenai/cached_path).
 
 ## Installation
 
@@ -33,14 +30,14 @@ cached version:
 use cached_path::cached_path;
 
 let path = cached_path(
-    "https://github.com/epwalsh/rust-cached-path/blob/master/README.md"
+    "https://github.com/epwalsh/rust-cached-path/blob/main/README.md"
 ).unwrap();
 assert!(path.is_file());
 ```
 
 ```bash
 # From the command line:
-$ cached-path https://github.com/epwalsh/rust-cached-path/blob/master/README.md
+$ cached-path https://github.com/epwalsh/rust-cached-path/blob/main/README.md
 /tmp/cache/055968a99316f3a42e7bcff61d3f590227dd7b03d17e09c41282def7c622ba0f.efa33e7f611ef2d163fea874ce614bb6fa5ab2a9d39d5047425e39ebe59fe782
 ```
 
@@ -66,7 +63,7 @@ automatically extract the files:
 use cached_path::{cached_path_with_options, Options};
 
 let path = cached_path_with_options(
-    "https://raw.githubusercontent.com/epwalsh/rust-cached-path/master/test_fixtures/utf-8_sample/archives/utf-8.tar.gz",
+    "https://raw.githubusercontent.com/epwalsh/rust-cached-path/main/test_fixtures/utf-8_sample/archives/utf-8.tar.gz",
     &Options::default().extract(),
 ).unwrap();
 assert!(path.is_dir());
@@ -74,7 +71,7 @@ assert!(path.is_dir());
 
 ```bash
 # From the command line:
-$ cached-path --extract https://raw.githubusercontent.com/epwalsh/rust-cached-path/master/test_fixtures/utf-8_sample/archives/utf-8.tar.gz
+$ cached-path --extract https://raw.githubusercontent.com/epwalsh/rust-cached-path/main/test_fixtures/utf-8_sample/archives/utf-8.tar.gz
 README.md
 ```
 

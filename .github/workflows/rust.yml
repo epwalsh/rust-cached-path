@@ -3,36 +3,12 @@ name: CI
 on:
   pull_request:
     branches:
-    - master
+    - main
   push:
     branches:
-    - master
-  release:
-    types: [published]
-  schedule:
-    - cron: '0 10 * * *' # run at 10 AM UTC
+    - main
 
 jobs:
-  changelog:
-    name: CHANGELOG
-    runs-on: ubuntu-latest
-    # Only run this on pull requests.
-    if: github.event_name == 'pull_request'
-
-    steps:
-    # Note that checkout@v2 will not work with the git command below!
-    - uses: actions/checkout@v1
-
-    - name: Debugging info
-      run: |
-        git remote -v
-
-    - name: Check that CHANGELOG has been updated
-      run: |
-        # If this step fails, this means you haven't updated the CHANGELOG.md
-        # file with notes on your contribution.
-        git diff --name-only $(git merge-base origin/master HEAD) | grep '^CHANGELOG.md$' && echo "Thanks for helping keep our CHANGELOG up-to-date!"
-
   build:
     name: Build
     runs-on: ${{ matrix.os }}
@@ -109,28 +85,3 @@ jobs:
       with:
         command: test
         args: --doc --all-features
-
-  publish:
-    name: Publish
-    needs: [build]
-    runs-on: ubuntu-latest
-    # Only run on main repo releases .
-    if: github.repository == 'epwalsh/rust-cached-path' && github.event_name == 'release'
-    steps:
-    - uses: actions/checkout@v2
-
-    - name: Install rust stable
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-
-    - name: Log in to crates.io
-      uses: actions-rs/cargo@v1
-      with:
-        command: login
-        args: ${{ secrets.CARGO_TOKEN }}
-
-    - name: Publish
-      uses: actions-rs/cargo@v1
-      with:
-        command: publish
