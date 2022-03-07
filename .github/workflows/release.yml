@@ -6,9 +6,8 @@ on:
       - 'v*.*.*'
 
 jobs:
-  publish_release:
-    name: Publish release
-    needs: [build]
+  publish:
+    name: Publish
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
