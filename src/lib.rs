@@ -2,10 +2,7 @@
 //! accessing both local and remote files. This can be used behind other APIs that need
 //! to access files agnostic to where they are located.
 //!
-//! This is based on
-//! [`allennlp/common/file_utils.py`](https://github.com/allenai/allennlp/blob/main/allennlp/common/file_utils.py)
-//! and
-//! [`transformers/file_utils.py`](https://github.com/huggingface/transformers/blob/main/src/transformers/file_utils.py).
+//! This is based on the Python library [`allenai/cached_path`](https://github.com/allenai/cached_path).
 //!
 //! # Installation
 //!
