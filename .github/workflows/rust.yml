@@ -1,4 +1,4 @@
-name: CI
+name: Rust
 
 on:
   pull_request:
@@ -9,79 +9,106 @@ on:
     - main
 
 jobs:
-  build:
-    name: Build
+  build_checks:
+    name: ${{ matrix.task.name }} (${{ matrix.os }}, ${{ matrix.tls }})
     runs-on: ${{ matrix.os }}
+    env:
+      RUST_BACKTRACE: full
+      RUSTC_WRAPPER: sccache
+      RUSTV: ${{ matrix.rust }}
+      SCCACHE_CACHE_SIZE: 1G
+      CACHE_PREFIX: v0
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        tls: ["default-tls", "rustls-tls"]
+        os: [ubuntu-latest, macos-latest]
+        tls: [default-tls, rustls-tls]
+        rust: [stable]
+        task:
+          - name: Test
+            run: |
+              cargo test --lib --features build-binary,${{ matrix.tls }}
+              cargo test --test cli --features build-binary,${{ matrix.tls }}
+              cargo test --doc --features build-binary,${{ matrix.tls }}
+
+        include:
+          - os: ubuntu-latest
+            tls: default-tls
+            rust: stable
+            task:
+              name: Format
+              run: cargo fmt -- --check
+
+          - os: ubuntu-latest
+            tls: default-tls
+            rust: stable
+            task:
+              name: Lint
+              run: --all-targets --features build-binary,${{ matrix.tls }} -- -D warnings
+
+          - os: ubuntu-latest
+            tls: default-tls
+            rust: nightly
+            task:
+              name: Build docs
+              run: cargo doc
+
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - name: Install rust stable
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        components: rustfmt, clippy
-        override: true
+      - name: Prepare environment (ubuntu-latest)
+        run: |
+          echo "SCCACHE_DIR=$HOME/.cache/sccache" >> $GITHUB_ENV
 
-    - name: Set build variables
-      run: |
-        # We use these variables as part of the cache keys.
-        echo "RUST_VERSION=$(rustc --version)" >> $GITHUB_ENV
-        echo "CARGO_VERSION=$(cargo --version)" >> $GITHUB_ENV
+      - name: Prepare environment (macos-latest)
+        run: |
+          echo "SCCACHE_DIR=$HOME/Library/Caches/Mozilla.sccache" >> $GITHUB_ENV
 
-    - name: Cache cargo registry
-      uses: actions/cache@v2
-      with:
-        path: ~/.cargo/registry
-        key: cargo registry ${{ github.job }} ${{ runner.os }} ${{ env.RUST_VERSION }} ${{ env.CARGO_VERSION }} ${{ hashFiles('**/Cargo.toml') }}
+      - name: Install sccache (ubuntu-latest)
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          LINK: https://github.com/mozilla/sccache/releases/download
+          SCCACHE_VERSION: v0.2.15
+        run: |
+          SCCACHE_FILE=sccache-$SCCACHE_VERSION-x86_64-unknown-linux-musl
+          URL="$LINK/$SCCACHE_VERSION/$SCCACHE_FILE.tar.gz"
+          echo "Downloading sccache from $URL"
+          mkdir -p $HOME/.local/bin
+          curl -L $URL | tar xz
+          mv -f $SCCACHE_FILE/sccache $HOME/.local/bin/sccache
+          chmod +x $HOME/.local/bin/sccache
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: Cache cargo build
-      uses: actions/cache@v2
-      with:
-        path: target
-        key: cargo build ${{ github.job }} ${{ runner.os }} ${{ env.RUST_VERSION }} ${{ env.CARGO_VERSION }} ${{ hashFiles('**/Cargo.toml') }}
+      - name: Install sccache (macos-latest)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # brew update  # takes forever
+          brew install sccache
 
-    - name: Lint with rustfmt
-      if: always()
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: -- --check
+      - name: Install Rust ${{ matrix.rust }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          profile: minimal
+          override: true
 
-    - name: Lint with clippy
-      if: always()
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        args: --all-targets --features build-binary,${{ matrix.tls }} -- -D warnings
+      - name: Cache cargo registry and sccache
+        uses: actions/cache@v2
+        continue-on-error: false
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.SCCACHE_DIR }}
+          key: ${{ env.CACHE_PREFIX }}-${{ runner.os }}-${{ matrix.task.name }}-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ env.CACHE_PREFIX }}-${{ runner.os }}-${{ matrix.task.name }}-
 
-    - name: Build
-      if: always()
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --features build-binary,${{ matrix.tls }}
+      - name: Start sccache server
+        run: sccache --start-server
 
-    - name: Run unit tests
-      if: always()
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --lib --features build-binary,${{ matrix.tls }}
+      - name: ${{ matrix.task.name }}
+        run: ${{ matrix.task.run }}
 
-    - name: Run integration tests
-      if: always()
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --test cli --features build-binary,${{ matrix.tls }}
-
-    - name: Run doc tests
-      if: always()
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --doc --all-features
+      - name: Stop sccache server
+        run: sccache --stop-server || true
