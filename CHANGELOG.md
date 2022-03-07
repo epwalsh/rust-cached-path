@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Added feature flag `rustls-tls` to make use of `rustls-tls` over `native-tls` in `reqwest`.
+
 ## [v0.5.2](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.5.2) - 2022-03-07
 
 ## [v0.5.1](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.4.5) - 2020-03-29
