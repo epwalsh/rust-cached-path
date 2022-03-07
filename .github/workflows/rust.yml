@@ -10,7 +10,7 @@ on:
 
 jobs:
   build_checks:
-    name: ${{ matrix.task.name }} (${{ matrix.os }}, ${{ matrix.tls }})
+    name: ${{ matrix.task.name }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       RUST_BACKTRACE: full
@@ -22,32 +22,30 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        tls: [default-tls, rustls-tls]
         rust: [stable]
         task:
-          - name: Test
+          - name: Test (default-tls)
             run: |
-              cargo test --lib --features build-binary,${{ matrix.tls }}
-              cargo test --test cli --features build-binary,${{ matrix.tls }}
-              cargo test --doc --features build-binary,${{ matrix.tls }}
+              cargo test --features build-binary,default-tls
+
+          - name: Test (rustls-tls)
+            run: |
+              cargo test --features build-binary,rustls-tls
 
         include:
           - os: ubuntu-latest
-            tls: default-tls
             rust: stable
             task:
               name: Format
               run: cargo fmt -- --check
 
           - os: ubuntu-latest
-            tls: default-tls
             rust: stable
             task:
               name: Lint
-              run: --all-targets --features build-binary,${{ matrix.tls }} -- -D warnings
+              run: --all-targets --features build-binary -- -D warnings
 
           - os: ubuntu-latest
-            tls: default-tls
             rust: nightly
             task:
               name: Build docs
