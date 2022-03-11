@@ -10,8 +10,7 @@ on:
       - main
     paths:
       - 'src/lib.rs'
-      - 'src/README.md'
-      - 'src/README.tpl'
+      - 'README.md'
 jobs:
   readme:
     name: README
@@ -27,16 +26,11 @@ jobs:
           profile: minimal
           override: true
 
-      - name: Install cargo-readme
+      - name: Install cargo-rdme
         run: |
-          cargo install cargo-readme
+          cargo install cargo-rdme
 
-      - name: Run cargo-readme
+      - name: Run cargo-rdme
         run: |
-          make readme
-
-      - name: Check that README is up-to-date
-        run: |
-          # If this step fails, this means you haven't ran 'make readme' to update the README
-          # with cargo-readme (cargo install cargo-readme).
-          git diff --name-only | grep '^README.md$' > /dev/null && exit 1 || echo 'Thanks for keeping our README up-to-date :)'
+          # If this step fails it means you haven't ran 'make readme' to update the README.
+          cargo rdme --check

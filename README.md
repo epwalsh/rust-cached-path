@@ -5,6 +5,15 @@
 [![MIT/Apache-2 licensed](https://img.shields.io/crates/l/cached-path.svg)](./LICENSE)
 [![CI](https://github.com/epwalsh/rust-cached-path/workflows/CI/badge.svg)](https://github.com/epwalsh/rust-cached-path/actions?query=workflow%3ACI)
 
+<!--
+DO NOT EDIT BELOW THIS POINT BY HAND!
+
+Everything below this point is automatically generated using cargo-rdme: https://github.com/orium/cargo-rdme
+Just run `make readme` to update.
+-->
+
+<!-- cargo-rdme start -->
+
 The idea behind `cached-path` is to provide a unified, simple interface for
 accessing both local and remote files. This can be used behind other APIs that need
 to access files agnostic to where they are located.
@@ -76,8 +85,8 @@ README.md
 ```
 
 It's also easy to customize the cache location, the HTTP client, and other options
-using a [`CacheBuilder`](https://docs.rs/cached-path/*/cached_path/struct.CacheBuilder.html) to construct a custom
-[`Cache`](https://docs.rs/cached-path/*/cached_path/struct.Cache.html) object. This is the recommended thing
+using a [`CacheBuilder`](https://docs.rs/cached-path/latest/cached_path/cache/struct.CacheBuilder.html) to construct a custom
+[`Cache`](https://docs.rs/cached-path/latest/cached_path/cache/struct.Cache.html) object. This is the recommended thing
 to do if your application makes multiple calls to `cached_path`, since it avoids the overhead
 of creating a new HTTP client on each call:
 
@@ -96,3 +105,5 @@ let path = cache.cached_path("README.md").unwrap();
 $ cached-path --dir /tmp/my-cache/ --connect-timeout 3 README.md
 README.md
 ```
+
+<!-- cargo-rdme end -->

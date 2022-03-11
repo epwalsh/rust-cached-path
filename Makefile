@@ -32,4 +32,4 @@ publish :
 
 .PHONY : readme
 readme :
-	cargo readme > README.md
+	cargo rdme --force

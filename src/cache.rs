@@ -16,7 +16,7 @@ use crate::archives::{extract_archive, ArchiveFormat};
 use crate::utils::hash_str;
 use crate::{meta::Meta, Error, ProgressBar};
 
-/// Builder to facilitate creating [`Cache`](struct.Cache.html) objects.
+/// Builder to facilitate creating [`Cache`] objects.
 #[derive(Debug)]
 pub struct CacheBuilder {
     config: Config,
@@ -147,7 +147,7 @@ impl Default for CacheBuilder {
     }
 }
 
-/// Options to use with [`Cache::cached_path_with_options`](struct.Cache.html#method.cached_with_options).
+/// Options to use with [`Cache::cached_path_with_options`].
 #[derive(Default)]
 pub struct Options {
     /// An optional subdirectory (relative to the cache root) to cache the resource in.

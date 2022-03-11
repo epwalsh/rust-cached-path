@@ -4,7 +4,7 @@
 //!
 //! This is based on the Python library [`allenai/cached_path`](https://github.com/allenai/cached_path).
 //!
-//! # Installation
+//! ## Installation
 //!
 //! `cached-path` can be used as both a library and a command-line tool. To install `cached-path`
 //! as a command-line tool, run
@@ -13,7 +13,7 @@
 //! cargo install --features build-binary cached-path
 //! ```
 //!
-//! # Usage
+//! ## Usage
 //!
 //! For remote resources, `cached-path` downloads and caches the resource, using the ETAG
 //! to know when to update the cache. The path returned is the local path to the latest
@@ -69,8 +69,8 @@
 //! ```
 //!
 //! It's also easy to customize the cache location, the HTTP client, and other options
-//! using a [`CacheBuilder`](https://docs.rs/cached-path/*/cached_path/struct.CacheBuilder.html) to construct a custom
-//! [`Cache`](https://docs.rs/cached-path/*/cached_path/struct.Cache.html) object. This is the recommended thing
+//! using a [`CacheBuilder`](crate::cache::CacheBuilder) to construct a custom
+//! [`Cache`](crate::cache::Cache) object. This is the recommended thing
 //! to do if your application makes multiple calls to `cached_path`, since it avoids the overhead
 //! of creating a new HTTP client on each call:
 //!
@@ -105,8 +105,8 @@ pub use crate::progress_bar::ProgressBar;
 
 /// Get the cached path to a resource.
 ///
-/// This is equivalent to calling [`Cache::cached_path`](struct.Cache.html#method.cached_path)
-/// with a temporary [`Cache`](struct.Cache.html) object.
+/// This is equivalent to calling [`Cache::cached_path`](crate::cache::Cache#method.cached_path)
+/// with a temporary [`Cache`](crate::cache::Cache) object.
 /// Therefore if you're going to be calling this function multiple times,
 /// it's more efficient to create and use a single `Cache` instead.
 pub fn cached_path(resource: &str) -> Result<PathBuf, Error> {
@@ -117,8 +117,8 @@ pub fn cached_path(resource: &str) -> Result<PathBuf, Error> {
 /// Get the cached path to a resource using the given options.
 ///
 /// This is equivalent to calling
-/// [`Cache::cached_path_with_options`](struct.Cache.html#method.cached_path_with_options)
-/// with a temporary [`Cache`](struct.Cache.html) object.
+/// [`Cache::cached_path_with_options`](crate::cache::Cache#method.cached_path_with_options)
+/// with a temporary [`Cache`](crate::cache::Cache) object.
 /// Therefore if you're going to be calling this function multiple times,
 /// it's more efficient to create and use a single `Cache` instead.
 pub fn cached_path_with_options(resource: &str, options: &Options) -> Result<PathBuf, Error> {
