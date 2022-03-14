@@ -37,14 +37,14 @@ jobs:
         command: login
         args: ${{ secrets.CARGO_TOKEN }}
 
+    - name: Generate release notes
+      run: |
+        python scripts/release_notes.py > ${{ github.workspace }}-RELEASE_NOTES.md
+
     - name: Publish to crates.io
       uses: actions-rs/cargo@v1
       with:
         command: publish
-
-    - name: Generate release notes
-      run: |
-        python scripts/release_notes.py > ${{ github.workspace }}-RELEASE_NOTES.md
 
     - name: Publish GitHub release
       uses: softprops/action-gh-release@v1
