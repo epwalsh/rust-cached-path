@@ -51,5 +51,5 @@ default-tls = ["reqwest/default-tls"]
 
 [dev-dependencies]
 httpmock = "0.5"
-assert_cmd = "1.0"
+assert_cmd = "2.0"
 predicates = "1.0"
