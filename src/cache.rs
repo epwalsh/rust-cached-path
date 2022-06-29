@@ -16,7 +16,7 @@ use crate::archives::{extract_archive, ArchiveFormat};
 use crate::utils::hash_str;
 use crate::{meta::Meta, Error, ProgressBar};
 
-/// Builder to facilitate creating [`Cache`](struct.Cache.html) objects.
+/// Builder to facilitate creating [`Cache`] objects.
 #[derive(Debug)]
 pub struct CacheBuilder {
     config: Config,
@@ -147,7 +147,7 @@ impl Default for CacheBuilder {
     }
 }
 
-/// Options to use with [`Cache::cached_path_with_options`](struct.Cache.html#method.cached_with_options).
+/// Options to use with [`Cache::cached_path_with_options`].
 #[derive(Default)]
 pub struct Options {
     /// An optional subdirectory (relative to the cache root) to cache the resource in.
@@ -465,7 +465,7 @@ impl Cache {
     ) -> Result<Meta, Error> {
         let mut retries: u32 = 0;
         loop {
-            match self.download_resource(resource, &url, path, etag) {
+            match self.download_resource(resource, url, path, etag) {
                 Ok(meta) => {
                     return Ok(meta);
                 }
@@ -549,7 +549,7 @@ impl Cache {
     fn try_get_etag(&self, resource: &str, url: &reqwest::Url) -> Result<Option<String>, Error> {
         let mut retries: u32 = 0;
         loop {
-            match self.get_etag(&url) {
+            match self.get_etag(url) {
                 Ok(etag) => return Ok(etag),
                 Err(err) => {
                     if retries >= self.max_retries {
@@ -599,14 +599,12 @@ impl Cache {
         suffix: Option<&str>,
     ) -> PathBuf {
         let resource_hash = hash_str(resource);
-        let mut filename: String;
-
-        if let Some(tag) = etag {
+        let mut filename = if let Some(tag) = etag {
             let etag_hash = hash_str(&tag[..]);
-            filename = format!("{}.{}", resource_hash, etag_hash);
+            format!("{}.{}", resource_hash, etag_hash)
         } else {
-            filename = resource_hash;
-        }
+            resource_hash
+        };
 
         if let Some(suf) = suffix {
             filename.push_str(suf);
