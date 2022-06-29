@@ -384,8 +384,7 @@ impl Cache {
                 return Err(Error::NoCachedVersions(String::from(resource)));
             }
         } else if !versions.is_empty() && versions[0].is_fresh(self.freshness_lifetime) {
-            // Oh hey, the latest version is still fresh! We can clean up any
-            // older versions and return the latest.
+            // Oh hey, the latest version is still fresh!
             info!("Latest cached version of {} is still fresh", resource);
             return Ok(versions[0].clone());
         }
