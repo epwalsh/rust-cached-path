@@ -303,7 +303,7 @@ impl Cache {
             // Extract archive.
             debug!("Treating {} as archive", resource);
 
-            fs::create_dir_all(&dirpath.parent().unwrap())?;
+            fs::create_dir_all(dirpath.parent().unwrap())?;
 
             // Need to acquire a lock here to make sure we don't try to extract
             // the same archive in parallel from multiple processes.
@@ -367,7 +367,7 @@ impl Cache {
 
         // Ensure root directory exists in case it has changed or been removed.
         if let Some(subdir_path) = subdir {
-            fs::create_dir_all(&self.dir.join(subdir_path))?;
+            fs::create_dir_all(self.dir.join(subdir_path))?;
         } else {
             fs::create_dir_all(&self.dir)?;
         };
@@ -540,7 +540,7 @@ impl Cache {
 
         debug!("Renaming temp file to cache location for {}", url);
 
-        fs::rename(tempfile.path(), &path)?;
+        fs::rename(tempfile.path(), path)?;
 
         Ok(meta)
     }
