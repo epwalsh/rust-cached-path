@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- Consolidated HTTP error variants into a single variant, `HttpError`, which sources directly from the underlying `reqwest::Error` for better error messages.
+
 ## [v0.5.3](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.5.3) - 2022-03-07
 
 ### Added

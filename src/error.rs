@@ -32,44 +32,33 @@ pub enum Error {
     #[error("An IO error occurred")]
     IoError(#[from] std::io::Error),
 
-    /// Arises when a bad HTTP status code is received while attempting to fetch
-    /// a remote resource.
-    #[error("HTTP response had status code {0}")]
-    HttpStatusError(u16),
-
-    /// Arises when an HTTP timeout error occurs while attempting to fetch a remote resource.
-    #[error("HTTP response timeout out")]
-    HttpTimeoutError,
-
-    /// Arises when the HTTP client fails to build.
-    #[error("HTTP builder error")]
-    HttpBuilderError,
-
-    /// Any other HTTP error that could occur while attempting to fetch a remote resource.
-    #[error("An HTTP error occurred")]
-    HttpError,
+    /// An HTTP error that could occur while attempting to fetch a remote resource.
+    #[error(transparent)]
+    HttpError(#[from] reqwest::Error),
 }
 
 impl Error {
     pub(crate) fn is_retriable(&self) -> bool {
         match self {
-            Error::HttpTimeoutError => true,
-            Error::HttpStatusError(status_code) => matches!(status_code, 502 | 503 | 504),
+            Error::HttpError(source) => {
+                if source.is_status() {
+                    matches!(
+                        source.status().map(|status| status.as_u16()),
+                        Some(502) | Some(503) | Some(504)
+                    )
+                } else {
+                    source.is_timeout()
+                }
+            }
             _ => false,
         }
     }
-}
 
-impl From<reqwest::Error> for Error {
-    fn from(err: reqwest::Error) -> Error {
-        if err.is_status() {
-            Error::HttpStatusError(err.status().unwrap().as_u16())
-        } else if err.is_timeout() {
-            Error::HttpTimeoutError
-        } else if err.is_builder() {
-            Error::HttpBuilderError
+    pub fn status_code(&self) -> Option<u16> {
+        if let Error::HttpError(inner) = self {
+            Some(inner.status().unwrap().as_u16())
         } else {
-            Error::HttpError
+            None
         }
     }
 }
