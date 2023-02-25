@@ -43,7 +43,7 @@ jobs:
           echo "$CARGO_RDME_VERSION"
 
       - name: Cache cargo-rdme
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         id: cache-cargo-rdme
         with:
           path: ~/.cargo/bin/cargo-rdme
