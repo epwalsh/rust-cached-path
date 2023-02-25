@@ -3,7 +3,6 @@ use flate2::read::GzDecoder;
 use std::fs::{self, File};
 use std::path::Path;
 use tempfile::tempdir_in;
-use zip_extensions::read::zip_extract;
 
 /// Supported archive types.
 pub(crate) enum ArchiveFormat {
@@ -41,11 +40,12 @@ pub(crate) fn extract_archive<P: AsRef<Path>>(
             archive.unpack(&temp_target)?;
         }
         ArchiveFormat::Zip => {
-            zip_extract(
-                &path.as_ref().to_path_buf(),
-                &temp_target.path().to_path_buf(),
-            )
-            .map_err(|e| Error::ExtractionError(format!("{:?}", e)))?;
+            let file = File::open(path)?;
+            let mut archive =
+                zip::ZipArchive::new(file).map_err(|e| Error::ExtractionError(e.to_string()))?;
+            archive
+                .extract(temp_target.path())
+                .map_err(|e| Error::ExtractionError(e.to_string()))?;
         }
     };
 

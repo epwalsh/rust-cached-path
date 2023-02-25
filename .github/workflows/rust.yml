@@ -42,6 +42,12 @@ jobs:
             task:
               name: Lint
               run: cargo clippy --all-targets --features build-binary -- -D warnings
+          
+          - os: ubuntu-latest
+            rust: stable
+            task:
+              name: Audit
+              run: cargo audit
 
           - os: ubuntu-latest
             rust: nightly
