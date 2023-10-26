@@ -154,13 +154,16 @@ pub struct Options {
     pub subdir: Option<String>,
     /// Automatically extract the resource, assuming the resource is an archive.
     pub extract: bool,
+    /// An optional subdirectory (relative to the cache root) to extract the resource in.
+    pub extract_dir: Option<String>,
 }
 
 impl Options {
-    pub fn new(subdir: Option<&str>, extract: bool) -> Self {
+    pub fn new(subdir: Option<&str>, extract: bool, extract_dir: Option<&str>) -> Self {
         Self {
             subdir: subdir.map(String::from),
             extract,
+            extract_dir: extract_dir.map(String::from),
         }
     }
 
@@ -317,9 +320,14 @@ impl Cache {
             filelock.lock_exclusive()?;
             debug!("Lock on extraction directory acquired for {}", resource);
 
+            let dirpath = if options.extract_dir.is_some() {
+                self.dir.join(options.extract_dir.as_ref().unwrap())
+            } else {
+                dirpath
+            };
             if !dirpath.is_dir() {
                 info!("Extracting {} to {:?}", resource, dirpath);
-                let format = ArchiveFormat::parse_from_extension(resource)?;
+                let format = ArchiveFormat::parse_from_extension(cached_path.to_str().unwrap())?;
                 extract_archive(&cached_path, &dirpath, &format)?;
             }
 
@@ -356,7 +364,7 @@ impl Cache {
         resource: &str,
         subdir: Option<&str>,
     ) -> Result<PathBuf, Error> {
-        let options = Options::new(subdir, false);
+        let options = Options::new(subdir, false, None);
         self.cached_path_with_options(resource, &options)
     }
 
