@@ -20,6 +20,8 @@ pub(crate) struct Meta {
     pub(crate) expires: Option<f64>,
     /// Time this version of the resource was cached.
     pub(crate) creation_time: f64,
+    /// Time of the last time the resource was accessed, default to creation_time.
+    pub(crate) last_accessed: f64,
 }
 
 impl Meta {
@@ -35,6 +37,7 @@ impl Meta {
             expires = Some(creation_time + (lifetime as f64));
         }
         let meta_path = Meta::meta_path(&resource_path);
+        let last_accessed = creation_time;
         Meta {
             resource,
             resource_path,
@@ -42,6 +45,7 @@ impl Meta {
             etag,
             expires,
             creation_time,
+            last_accessed,
         }
     }
 
