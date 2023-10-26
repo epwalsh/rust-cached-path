@@ -292,7 +292,6 @@ impl Cache {
             }
         } else {
             // This is a remote resource, so fetch it to the cache.
-            debug!("Getting remote file GBRLS debug {}", resource);
             let meta = self.fetch_remote_resource(resource, options.subdir.as_deref())?;
 
             // Check if we need to extract.
@@ -326,12 +325,10 @@ impl Cache {
             } else {
                 dirpath
             };
-
             if !dirpath.is_dir() {
                 info!("Extracting {} to {:?}", resource, dirpath);
                 let format = ArchiveFormat::parse_from_extension(cached_path.to_str().unwrap())?;
                 extract_archive(&cached_path, &dirpath, &format)?;
-                info!("Done extracting (deleteme) {} to {:?}", resource, dirpath);
             }
 
             filelock.unlock()?;
@@ -669,7 +666,7 @@ mod tests {
             .build()
             .unwrap();
 
-            let resource = "http://localhost:5000/foo.txt";
+        let resource = "http://localhost:5000/foo.txt";
         assert_eq!(
             cache
                 .resource_to_filepath(resource, &None, None, None)
