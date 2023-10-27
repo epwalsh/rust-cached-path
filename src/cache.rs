@@ -8,6 +8,7 @@ use std::default::Default;
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::thread;
 use std::time::{self, Duration};
 use tempfile::NamedTempFile;
@@ -283,16 +284,25 @@ impl Cache {
                     .ok()
                     .and_then(|sys_time| sys_time.elapsed().ok())
                     .map(|duration| format!("{}", duration.as_secs()));
-                extraction_dir = Some(self.resource_to_filepath(
-                    resource,
-                    &resource_last_modified,
-                    options.subdir.as_deref(),
-                    Some("-extracted"),
-                ));
+
+                extraction_dir = if let Some(extract_dir) = &options.extract_dir {
+                    Some(cached_path.join(extract_dir))
+                } else {
+                    Some(self.resource_to_filepath(
+                        resource,
+                        &resource_last_modified,
+                        options.subdir.as_deref(),
+                        Some("-extracted"),
+                    ))
+                };
             }
         } else {
             // This is a remote resource, so fetch it to the cache.
-            let meta = self.fetch_remote_resource(resource, options.subdir.as_deref())?;
+            let meta = self.fetch_remote_resource(
+                resource,
+                options.subdir.as_deref(),
+                options.extract_dir.as_deref(),
+            )?;
 
             // Check if we need to extract.
             if options.extract {
@@ -320,11 +330,6 @@ impl Cache {
             filelock.lock_exclusive()?;
             debug!("Lock on extraction directory acquired for {}", resource);
 
-            let dirpath = if options.extract_dir.is_some() {
-                self.dir.join(options.extract_dir.as_ref().unwrap())
-            } else {
-                dirpath
-            };
             if !dirpath.is_dir() {
                 info!("Extracting {} to {:?}", resource, dirpath);
                 let format = ArchiveFormat::parse_from_extension(cached_path.to_str().unwrap())?;
@@ -368,7 +373,12 @@ impl Cache {
         self.cached_path_with_options(resource, &options)
     }
 
-    fn fetch_remote_resource(&self, resource: &str, subdir: Option<&str>) -> Result<Meta, Error> {
+    fn fetch_remote_resource(
+        &self,
+        resource: &str,
+        subdir: Option<&str>,
+        extract_dir: Option<&str>,
+    ) -> Result<Meta, Error> {
         // Otherwise we attempt to parse the URL.
         let url =
             reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl(String::from(resource)))?;
@@ -425,8 +435,7 @@ impl Cache {
         }
 
         // No up-to-date version cached, so we have to try downloading it.
-        let meta = self.try_download_resource(resource, &url, &path, &etag)?;
-
+        let meta = self.try_download_resource(resource, &url, &path, &etag, extract_dir)?;
         info!("New version of {} cached", resource);
 
         filelock.unlock()?;
@@ -469,10 +478,11 @@ impl Cache {
         url: &reqwest::Url,
         path: &Path,
         etag: &Option<String>,
+        extract_dir: Option<&str>,
     ) -> Result<Meta, Error> {
         let mut retries: u32 = 0;
         loop {
-            match self.download_resource(resource, url, path, etag) {
+            match self.download_resource(resource, url, path, etag, extract_dir) {
                 Ok(meta) => {
                     return Ok(meta);
                 }
@@ -503,6 +513,7 @@ impl Cache {
         url: &reqwest::Url,
         path: &Path,
         etag: &Option<String>,
+        extract_dir: Option<&str>,
     ) -> Result<Meta, Error> {
         debug!("Attempting connection to {}", url);
 
@@ -543,6 +554,7 @@ impl Cache {
             path.into(),
             etag.clone(),
             self.freshness_lifetime,
+            extract_dir.map(|s| PathBuf::from_str(s).unwrap()),
         );
         meta.to_file()?;
 
