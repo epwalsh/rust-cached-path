@@ -332,7 +332,7 @@ impl Cache {
 
             if !dirpath.is_dir() {
                 info!("Extracting {} to {:?}", resource, dirpath);
-                let format = ArchiveFormat::parse_from_extension(cached_path.to_str().unwrap())?;
+                let format = ArchiveFormat::parse_from_path(&cached_path)?;
                 extract_archive(&cached_path, &dirpath, &format)?;
             }
 
@@ -448,7 +448,7 @@ impl Cache {
     fn find_existing(&self, resource: &str, subdir: Option<&str>) -> Vec<Meta> {
         let mut existing_meta: Vec<Meta> = vec![];
         let glob_string = format!(
-            "{}.*.meta",
+            "{}*.meta",
             self.resource_to_filepath(resource, &None, subdir, None)
                 .to_str()
                 .unwrap(),

@@ -58,14 +58,13 @@ impl Meta {
     }
 
     pub(crate) fn get_extraction_path(&self) -> PathBuf {
-        let dirname = format!(
-            "{}-extracted",
-            self.resource_path.file_name().unwrap().to_str().unwrap()
-        );
-
         if let Some(extraction_path) = &self.extraction_path {
             self.resource_path.parent().unwrap().join(extraction_path)
         } else {
+            let dirname = format!(
+                "{}-extracted",
+                self.resource_path.file_name().unwrap().to_str().unwrap()
+            );
             self.resource_path.parent().unwrap().join(dirname)
         }
     }

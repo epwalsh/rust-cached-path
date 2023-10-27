@@ -12,12 +12,12 @@ pub(crate) enum ArchiveFormat {
 
 impl ArchiveFormat {
     /// Parse archive type from resource extension.
-    pub(crate) fn parse_from_extension(resource: &str) -> Result<Self, Error> {
-        let ext = infer::get_from_path(resource).unwrap().unwrap().extension();
+    pub(crate) fn parse_from_path<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+        let ext = infer::get_from_path(path).unwrap().unwrap().extension();
         // Here we assume that gz contain a tar inside it.
-        if ext.ends_with("gz") {
+        if ext == "gz" {
             Ok(Self::TarGz)
-        } else if ext.ends_with("zip") {
+        } else if ext == "zip" {
             Ok(Self::Zip)
         } else {
             Err(Error::ExtractionError("unsupported archive format".into()))
