@@ -1,5 +1,8 @@
 use std::io::{self, Write};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Instant;
+use tokio::io::AsyncWrite;
 
 /// Progress bar types.
 ///
@@ -23,11 +26,11 @@ impl Default for ProgressBar {
 }
 
 impl ProgressBar {
-    pub(crate) fn wrap_download<W: Write>(
-        &self,
+    pub(crate) fn wrap_download<'a, W: AsyncWrite>(
+        &'a self,
         resource: &str,
         content_length: Option<u64>,
-        writer: W,
+        writer: Pin<&'a mut W>,
     ) -> DownloadWrapper<W> {
         let bar: Box<dyn DownloadBar> = match self {
             ProgressBar::Full => Box::new(FullDownloadBar::new(content_length)),
@@ -37,16 +40,17 @@ impl ProgressBar {
     }
 }
 
-pub(crate) struct DownloadWrapper<W: Write> {
+pub(crate) struct DownloadWrapper<'a, W: AsyncWrite> {
     bar: Box<dyn DownloadBar>,
-    writer: W,
+    writer: Pin<&'a mut W>,
 }
 
-impl<W> DownloadWrapper<W>
+impl<'a, W> DownloadWrapper<'a, W>
 where
-    W: Write,
+    W: AsyncWrite,
 {
-    fn new(bar: Box<dyn DownloadBar>, writer: W) -> Self {
+    fn new(bar: Box<dyn DownloadBar>, writer: Pin<&'a mut W>) -> Self {
+        // let writer = std::pin::pin!(writer);
         Self { bar, writer }
     }
 
@@ -55,27 +59,37 @@ where
     }
 }
 
-impl<W: Write> Write for DownloadWrapper<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.writer.write(buf)
+impl<W: AsyncWrite> AsyncWrite for DownloadWrapper<'_, W> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        self.writer.as_mut().poll_write(cx, buf)
     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        self.writer.flush()
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.writer.as_mut().poll_flush(cx)
     }
 
-    fn write_vectored(&mut self, bufs: &[io::IoSlice]) -> io::Result<usize> {
-        self.writer.write_vectored(bufs)
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice],
+    ) -> Poll<io::Result<usize>> {
+        self.writer.as_mut().poll_write_vectored(cx, bufs)
     }
 
-    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.writer.write_all(buf).map(|()| {
-            self.bar.tick(buf.len());
-        })
+    fn is_write_vectored(&self) -> bool {
+        self.writer.is_write_vectored()
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.writer.as_mut().poll_shutdown(cx)
     }
 }
 
-trait DownloadBar {
+trait DownloadBar: Send + Sync {
     fn tick(&mut self, chunk_size: usize);
 
     fn finish(&self);
