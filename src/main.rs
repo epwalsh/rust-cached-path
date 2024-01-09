@@ -59,7 +59,8 @@ struct Opt {
     quietly: bool,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     color_eyre::install()?;
     env_logger::init();
     let opt = Opt::from_args();
@@ -68,7 +69,9 @@ fn main() -> Result<()> {
 
     let cache = build_cache_from_opt(&opt)?;
     let options = Options::new(opt.subdir.as_deref(), opt.extract);
-    let path = cache.cached_path_with_options(&opt.resource, &options)?;
+    let path = cache
+        .cached_path_with_options(&opt.resource, &options)
+        .await?;
     println!("{}", path.to_string_lossy());
 
     Ok(())
