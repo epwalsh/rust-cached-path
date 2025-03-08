@@ -3,11 +3,13 @@ use flate2::read::GzDecoder;
 use std::fs::{self, File};
 use std::path::Path;
 use tempfile::tempdir_in;
+use xz::read::XzDecoder;
 
 /// Supported archive types.
 pub(crate) enum ArchiveFormat {
     TarGz,
     Zip,
+    TarXz,
 }
 
 impl ArchiveFormat {
@@ -17,6 +19,8 @@ impl ArchiveFormat {
             Ok(Self::TarGz)
         } else if resource.ends_with(".zip") {
             Ok(Self::Zip)
+        } else if resource.ends_with(".tar.xz") {
+            Ok(Self::TarXz)
         } else {
             Err(Error::ExtractionError("unsupported archive format".into()))
         }
@@ -46,6 +50,12 @@ pub(crate) fn extract_archive<P: AsRef<Path>>(
             archive
                 .extract(temp_target.path())
                 .map_err(|e| Error::ExtractionError(e.to_string()))?;
+        }
+        ArchiveFormat::TarXz => {
+            let tar_xz = File::open(path)?;
+            let tar = XzDecoder::new(tar_xz);
+            let mut archive = tar::Archive::new(tar);
+            archive.unpack(&temp_target)?;
         }
     };
 

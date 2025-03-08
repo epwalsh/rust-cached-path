@@ -6,8 +6,10 @@ use std::time::Instant;
 /// This can be set with
 /// [`CacheBuilder::progress_bar()`](struct.CacheBuilder.html#method.progress_bar).
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub enum ProgressBar {
     /// Gives pretty, verbose progress bars.
+    #[default]
     Full,
     /// Gives progress bars with minimal output.
     ///
@@ -16,11 +18,6 @@ pub enum ProgressBar {
     Light,
 }
 
-impl Default for ProgressBar {
-    fn default() -> Self {
-        ProgressBar::Full
-    }
-}
 
 impl ProgressBar {
     pub(crate) fn wrap_download<W: Write>(
