@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v0.6.2](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.6.2) - 2025-05-07
+
 ### Fixed
 
 - Fixed some issues with old dependencies.
