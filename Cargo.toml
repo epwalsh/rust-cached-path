@@ -49,6 +49,6 @@ rustls-tls = ["reqwest/rustls-tls"]
 default-tls = ["reqwest/default-tls"]
 
 [dev-dependencies]
-httpmock = "0.5"
+httpmock = "0.7"
 assert_cmd = "1.0"
 predicates = "2.1"

@@ -313,6 +313,7 @@ impl Cache {
                 .read(true)
                 .write(true)
                 .create(true)
+                .truncate(true)
                 .open(lock_path)?;
             filelock.lock_exclusive()?;
             debug!("Lock on extraction directory acquired for {}", resource);
@@ -323,7 +324,8 @@ impl Cache {
                 extract_archive(&cached_path, &dirpath, &format)?;
             }
 
-            filelock.unlock()?;
+            fs2::FileExt::unlock(&filelock)?;
+            //filelock.unlock()?;
             debug!("Lock released on extraction directory for {}", resource);
 
             Ok(dirpath)
@@ -403,6 +405,7 @@ impl Cache {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(lock_path)?;
         filelock.lock_exclusive()?;
         debug!("Lock acquired for {}", resource);
@@ -412,7 +415,8 @@ impl Cache {
             // We'll return the up-to-date version and clean up any other
             // dangling ones.
             info!("Cached version of {} is up-to-date", resource);
-            filelock.unlock()?;
+            //filelock.unlock()?;
+            fs2::FileExt::unlock(&filelock)?;
             return Meta::from_cache(&path);
         }
 
@@ -421,7 +425,8 @@ impl Cache {
 
         info!("New version of {} cached", resource);
 
-        filelock.unlock()?;
+        //filelock.unlock()?;
+        fs2::FileExt::unlock(&filelock)?;
         debug!("Lock released for {}", resource);
 
         Ok(meta)

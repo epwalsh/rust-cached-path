@@ -5,21 +5,16 @@ use std::time::Instant;
 ///
 /// This can be set with
 /// [`CacheBuilder::progress_bar()`](struct.CacheBuilder.html#method.progress_bar).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum ProgressBar {
     /// Gives pretty, verbose progress bars.
+    #[default]
     Full,
     /// Gives progress bars with minimal output.
     ///
     /// This is a good option to use if your output is being captured to a file but you
     /// still want to see progress updates.
     Light,
-}
-
-impl Default for ProgressBar {
-    fn default() -> Self {
-        ProgressBar::Full
-    }
 }
 
 impl ProgressBar {
