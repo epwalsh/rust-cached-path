@@ -1,6 +1,7 @@
 use crate::{meta::Meta, Cache, Options};
+use httpmock::prelude::*;
 use httpmock::Method::{GET, HEAD};
-use httpmock::{MockRef, MockServer};
+use httpmock::Mock;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -10,8 +11,8 @@ static ETAG_KEY: &str = "ETag";
 
 struct Fixture<'a> {
     url: String,
-    get: MockRef<'a>,
-    head: MockRef<'a>,
+    get: Mock<'a>,
+    head: Mock<'a>,
 }
 
 impl<'a> Fixture<'a> {
@@ -38,7 +39,7 @@ impl<'a> Fixture<'a> {
     }
 }
 
-impl<'a> Drop for Fixture<'a> {
+impl Drop for Fixture<'_> {
     fn drop(&mut self) {
         self.head.delete();
         self.get.delete();
