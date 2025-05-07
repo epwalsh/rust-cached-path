@@ -52,4 +52,3 @@ default-tls = ["reqwest/default-tls"]
 httpmock = "0.7"
 assert_cmd = "1.0"
 predicates = "2.1"
-cargo-audit = "0.21"
