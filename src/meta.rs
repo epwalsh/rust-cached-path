@@ -14,6 +14,8 @@ pub(crate) struct Meta {
     pub(crate) resource_path: PathBuf,
     /// Path to the serialized meta.
     pub(crate) meta_path: PathBuf,
+    /// Path to the directory that the resource is extracted.
+    pub(crate) extraction_path: Option<PathBuf>,
     /// The ETAG of the resource from the time it was cached, if there was one.
     pub(crate) etag: Option<String>,
     /// Time that the freshness of this cached resource will expire.
@@ -28,6 +30,7 @@ impl Meta {
         resource_path: PathBuf,
         etag: Option<String>,
         freshness_lifetime: Option<u64>,
+        extraction_path: Option<PathBuf>,
     ) -> Meta {
         let mut expires: Option<f64> = None;
         let creation_time = now();
@@ -42,6 +45,7 @@ impl Meta {
             etag,
             expires,
             creation_time,
+            extraction_path,
         }
     }
 
@@ -54,11 +58,15 @@ impl Meta {
     }
 
     pub(crate) fn get_extraction_path(&self) -> PathBuf {
-        let dirname = format!(
-            "{}-extracted",
-            self.resource_path.file_name().unwrap().to_str().unwrap()
-        );
-        self.resource_path.parent().unwrap().join(dirname)
+        if let Some(extraction_path) = &self.extraction_path {
+            self.resource_path.parent().unwrap().join(extraction_path)
+        } else {
+            let dirname = format!(
+                "{}-extracted",
+                self.resource_path.file_name().unwrap().to_str().unwrap()
+            );
+            self.resource_path.parent().unwrap().join(dirname)
+        }
     }
 
     pub(crate) fn to_file(&self) -> Result<(), Error> {

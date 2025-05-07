@@ -12,10 +12,12 @@ pub(crate) enum ArchiveFormat {
 
 impl ArchiveFormat {
     /// Parse archive type from resource extension.
-    pub(crate) fn parse_from_extension(resource: &str) -> Result<Self, Error> {
-        if resource.ends_with(".tar.gz") {
+    pub(crate) fn parse_from_path<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+        let ext = infer::get_from_path(path).unwrap().unwrap().extension();
+        // Here we assume that gz contain a tar inside it.
+        if ext == "gz" {
             Ok(Self::TarGz)
-        } else if resource.ends_with(".zip") {
+        } else if ext == "zip" {
             Ok(Self::Zip)
         } else {
             Err(Error::ExtractionError("unsupported archive format".into()))
@@ -34,13 +36,13 @@ pub(crate) fn extract_archive<P: AsRef<Path>>(
 
     match format {
         ArchiveFormat::TarGz => {
-            let tar_gz = File::open(path)?;
+            let tar_gz = File::open(&path)?;
             let tar = GzDecoder::new(tar_gz);
             let mut archive = tar::Archive::new(tar);
             archive.unpack(&temp_target)?;
         }
         ArchiveFormat::Zip => {
-            let file = File::open(path)?;
+            let file = File::open(&path)?;
             let mut archive =
                 zip::ZipArchive::new(file).map_err(|e| Error::ExtractionError(e.to_string()))?;
             archive
@@ -49,6 +51,7 @@ pub(crate) fn extract_archive<P: AsRef<Path>>(
         }
     };
 
+    fs::remove_file(&path)?;
     // Now rename the temp directory to the final target directory.
     fs::rename(temp_target, target)?;
 
