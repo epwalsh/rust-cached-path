@@ -436,7 +436,7 @@ impl Cache {
     fn find_existing(&self, resource: &str, subdir: Option<&str>) -> Vec<Meta> {
         let mut existing_meta: Vec<Meta> = vec![];
         let glob_string = format!(
-            "{}.*.meta",
+            "{}*.meta",
             self.resource_to_filepath(resource, &None, subdir, None)
                 .to_str()
                 .unwrap(),
