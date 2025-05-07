@@ -95,7 +95,7 @@ jobs:
           override: true
 
       - name: Cache cargo registry and sccache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         continue-on-error: false
         with:
           path: |
