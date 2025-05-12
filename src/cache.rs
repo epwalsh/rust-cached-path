@@ -154,13 +154,16 @@ pub struct Options {
     pub subdir: Option<String>,
     /// Automatically extract the resource, assuming the resource is an archive.
     pub extract: bool,
+    /// Force downloading the resource even if there's a cache hit.
+    pub force: bool,
 }
 
 impl Options {
-    pub fn new(subdir: Option<&str>, extract: bool) -> Self {
+    pub fn new(subdir: Option<&str>, extract: bool, force: bool) -> Self {
         Self {
             subdir: subdir.map(String::from),
             extract,
+            force,
         }
     }
 
@@ -173,6 +176,12 @@ impl Options {
     /// Treat the resource as an archive and try to extract it.
     pub fn extract(mut self) -> Self {
         self.extract = true;
+        self
+    }
+
+    /// Force downloading the resource, even if there's a cache hit.
+    pub fn force(mut self) -> Self {
+        self.force = true;
         self
     }
 }
@@ -289,7 +298,8 @@ impl Cache {
             }
         } else {
             // This is a remote resource, so fetch it to the cache.
-            let meta = self.fetch_remote_resource(resource, options.subdir.as_deref())?;
+            let meta =
+                self.fetch_remote_resource(resource, options.subdir.as_deref(), options.force)?;
 
             // Check if we need to extract.
             if options.extract {
@@ -358,11 +368,16 @@ impl Cache {
         resource: &str,
         subdir: Option<&str>,
     ) -> Result<PathBuf, Error> {
-        let options = Options::new(subdir, false);
+        let options = Options::new(subdir, false, false);
         self.cached_path_with_options(resource, &options)
     }
 
-    fn fetch_remote_resource(&self, resource: &str, subdir: Option<&str>) -> Result<Meta, Error> {
+    fn fetch_remote_resource(
+        &self,
+        resource: &str,
+        subdir: Option<&str>,
+        force: bool,
+    ) -> Result<Meta, Error> {
         // Otherwise we attempt to parse the URL.
         let url =
             reqwest::Url::parse(resource).map_err(|_| Error::InvalidUrl(String::from(resource)))?;
@@ -374,21 +389,27 @@ impl Cache {
             fs::create_dir_all(&self.dir)?;
         };
 
-        // Find any existing cached versions of resource and check if they are still
-        // fresh according to the `freshness_lifetime` setting.
-        let versions = self.find_existing(resource, subdir); // already sorted, latest is first.
-        if self.offline {
-            if !versions.is_empty() {
-                info!("Found existing cached version of {}", resource);
+        if !force {
+            // Find any existing cached versions of resource and check if they are still
+            // fresh according to the `freshness_lifetime` setting.
+            let versions = self.find_existing(resource, subdir); // already sorted, latest is first.
+            if self.offline {
+                if !versions.is_empty() {
+                    info!("Found existing cached version of {}", resource);
+                    return Ok(versions[0].clone());
+                } else {
+                    error!("Offline mode is enabled but no cached versions of resource exist.");
+                    return Err(Error::NoCachedVersions(String::from(resource)));
+                }
+            } else if !versions.is_empty() && versions[0].is_fresh(self.freshness_lifetime) {
+                // Oh hey, the latest version is still fresh!
+                info!("Latest cached version of {} is still fresh", resource);
                 return Ok(versions[0].clone());
-            } else {
-                error!("Offline mode is enabled but no cached versions of resource exist.");
-                return Err(Error::NoCachedVersions(String::from(resource)));
             }
-        } else if !versions.is_empty() && versions[0].is_fresh(self.freshness_lifetime) {
-            // Oh hey, the latest version is still fresh!
-            info!("Latest cached version of {} is still fresh", resource);
-            return Ok(versions[0].clone());
+        } else if self.offline {
+            return Err(Error::ConfigurationError(
+                "'force=true' is invalid with offline mode enabled".to_string(),
+            ));
         }
 
         // No existing version or the existing versions are older than their freshness
@@ -411,13 +432,17 @@ impl Cache {
         debug!("Lock acquired for {}", resource);
 
         if path.exists() {
-            // Oh cool! The cache is up-to-date according to the ETAG.
-            // We'll return the up-to-date version and clean up any other
-            // dangling ones.
-            info!("Cached version of {} is up-to-date", resource);
-            //filelock.unlock()?;
-            fs2::FileExt::unlock(&filelock)?;
-            return Meta::from_cache(&path);
+            if !force {
+                // Oh cool! The cache is up-to-date according to the ETAG.
+                // We'll return the up-to-date version and clean up any other
+                // dangling ones.
+                info!("Cached version of {} is up-to-date", resource);
+                //filelock.unlock()?;
+                fs2::FileExt::unlock(&filelock)?;
+                return Meta::from_cache(&path);
+            } else {
+                warn!("Forcing re-download of {} despite cache hit", resource);
+            }
         }
 
         // No up-to-date version cached, so we have to try downloading it.

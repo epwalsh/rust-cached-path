@@ -35,6 +35,10 @@ pub enum Error {
     /// An HTTP error that could occur while attempting to fetch a remote resource.
     #[error(transparent)]
     HttpError(#[from] reqwest::Error),
+
+    /// Raise when configuration options are invalid.
+    #[error("Configuration error ({0})")]
+    ConfigurationError(String),
 }
 
 impl Error {
