@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v0.7.0](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.7.0) - 2025-05-14
+
 ### Added
 
 - Added `force` option to force downloading a resource even if there's a cache hit.
