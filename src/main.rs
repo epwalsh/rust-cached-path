@@ -54,6 +54,10 @@ struct Opt {
     /// Only use offline features.
     offline: bool,
 
+    #[structopt(short = "-f", long = "force")]
+    /// Force downloading a resource even if there's a cache hit.
+    force: bool,
+
     #[structopt(short = "-q", long = "quietly")]
     /// Disable the progress bar for downloads.
     quietly: bool,
@@ -67,7 +71,7 @@ fn main() -> Result<()> {
     debug!("{:?}", opt);
 
     let cache = build_cache_from_opt(&opt)?;
-    let options = Options::new(opt.subdir.as_deref(), opt.extract);
+    let options = Options::new(opt.subdir.as_deref(), opt.extract, opt.force);
     let path = cache.cached_path_with_options(&opt.resource, &options)?;
     println!("{}", path.to_string_lossy());
 
