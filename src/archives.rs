@@ -1,6 +1,7 @@
 use crate::error::Error;
 use flate2::read::GzDecoder;
 use std::fs::{self, File};
+use std::io::Read;
 use std::path::Path;
 use tempfile::tempdir_in;
 
@@ -11,14 +12,27 @@ pub(crate) enum ArchiveFormat {
 }
 
 impl ArchiveFormat {
+    fn is_tar<R: Read>(read: &mut R) -> bool {
+        let mut buf = [0; 262];
+        read.read_exact(&mut buf)
+            .is_ok_and(|_| infer::archive::is_tar(&buf))
+    }
+
     /// Parse archive type from resource extension.
-    pub(crate) fn parse_from_extension(resource: &str) -> Result<Self, Error> {
-        if resource.ends_with(".tar.gz") {
-            Ok(Self::TarGz)
-        } else if resource.ends_with(".zip") {
-            Ok(Self::Zip)
+    pub(crate) fn parse_from_extension(resource: &Path) -> Result<Self, Error> {
+        if let Some(file_type) = infer::get_from_path(resource)? {
+            let archive_type = match file_type.mime_type() {
+                "application/gzip" if Self::is_tar(&mut GzDecoder::new(File::open(resource)?)) => {
+                    Self::TarGz
+                }
+                "application/zip" => Self::Zip,
+                _ => return Err(Error::ExtractionError("unsupported archive format".into())),
+            };
+            Ok(archive_type)
         } else {
-            Err(Error::ExtractionError("unsupported archive format".into()))
+            Err(Error::ExtractionError(
+                "cannot determine archive file type".into(),
+            ))
         }
     }
 }
