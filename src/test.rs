@@ -193,8 +193,7 @@ fn test_cached_path_remote_file_in_subdir() {
     assert!(Meta::meta_path(&path).is_file());
 }
 
-#[test]
-fn test_extract_tar_gz() {
+fn assert_extract_archive(filename: &str) {
     let cache_dir = tempdir().unwrap();
     let cache = Cache::builder()
         .dir(cache_dir.path().to_owned())
@@ -202,15 +201,9 @@ fn test_extract_tar_gz() {
         .build()
         .unwrap();
 
-    let resource: PathBuf = [
-        ".",
-        "test_fixtures",
-        "utf-8_sample",
-        "archives",
-        "utf-8.tar.gz",
-    ]
-    .iter()
-    .collect();
+    let resource: PathBuf = [".", "test_fixtures", "utf-8_sample", "archives", filename]
+        .iter()
+        .collect();
 
     let path = cache
         .cached_path_with_options(resource.to_str().unwrap(), &Options::default().extract())
@@ -226,35 +219,24 @@ fn test_extract_tar_gz() {
 }
 
 #[test]
+fn test_extract_tar_gz() {
+    assert_extract_archive("utf-8.tar.gz");
+}
+
+#[test]
+fn test_extract_tar_xz() {
+    assert_extract_archive("utf-8.tar.xz");
+}
+
+#[test]
+#[should_panic(expected = "cannot determine archive file type")]
+fn test_extract_tar_lzma() {
+    assert_extract_archive("utf-8.tar.lzma");
+}
+
+#[test]
 fn test_extract_zip() {
-    let cache_dir = tempdir().unwrap();
-    let cache = Cache::builder()
-        .dir(cache_dir.path().to_owned())
-        .progress_bar(None)
-        .build()
-        .unwrap();
-
-    let resource: PathBuf = [
-        ".",
-        "test_fixtures",
-        "utf-8_sample",
-        "archives",
-        "utf-8.zip",
-    ]
-    .iter()
-    .collect();
-
-    let path = cache
-        .cached_path_with_options(resource.to_str().unwrap(), &Options::default().extract())
-        .unwrap();
-    assert!(path.is_dir());
-    assert!(path.to_str().unwrap().ends_with("-extracted"));
-    assert!(path
-        .to_str()
-        .unwrap()
-        .starts_with(cache_dir.path().to_str().unwrap()));
-    let sample_file_path = path.join("dummy.txt");
-    assert!(sample_file_path.is_file());
+    assert_extract_archive("utf-8.zip");
 }
 
 #[test]
