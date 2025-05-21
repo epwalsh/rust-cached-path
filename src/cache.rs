@@ -330,7 +330,7 @@ impl Cache {
 
             if !dirpath.is_dir() {
                 info!("Extracting {} to {:?}", resource, dirpath);
-                let format = ArchiveFormat::parse_from_extension(resource)?;
+                let format = ArchiveFormat::parse_from_extension(&cached_path)?;
                 extract_archive(&cached_path, &dirpath, &format)?;
             }
 

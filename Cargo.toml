@@ -41,12 +41,15 @@ indicatif = "0.16"
 env_logger = { version = "0.10", optional = true }
 structopt = { version = "0.3", optional = true }
 color-eyre = { version = "0.6", optional = true }
+infer = "0.19.0"
+lzma-rs = { version = "0.3", optional = true }
 
 [features]
 default = ["default-tls"]
 build-binary = ["env_logger", "structopt", "color-eyre"]
 rustls-tls = ["reqwest/rustls-tls"]
 default-tls = ["reqwest/default-tls"]
+lzma = ["lzma-rs"]
 
 [dev-dependencies]
 httpmock = "0.7"

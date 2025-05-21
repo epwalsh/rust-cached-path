@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Support `.tar.xz` and `.tar.lzma` archives
+
+### Fixed
+
+- Infer archive type from bytes instead of filename extension
+
 ## [v0.7.0](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.7.0) - 2025-05-14
 
 ### Added
