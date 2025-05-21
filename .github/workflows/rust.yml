@@ -25,10 +25,10 @@ jobs:
         rust: [stable]
         task:
           - name: Test (default-tls)
-            run: cargo test --features build-binary,default-tls
+            run: cargo test --features build-binary,lzma,default-tls
 
           - name: Test (rustls-tls)
-            run: cargo test --features build-binary,rustls-tls
+            run: cargo test --features build-binary,lzma,rustls-tls
 
         include:
           - os: ubuntu-latest

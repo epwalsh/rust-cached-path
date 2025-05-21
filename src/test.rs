@@ -223,13 +223,14 @@ fn test_extract_tar_gz() {
     assert_extract_archive("utf-8.tar.gz");
 }
 
+#[cfg(feature = "lzma")]
 #[test]
 fn test_extract_tar_xz() {
     assert_extract_archive("utf-8.tar.xz");
 }
 
+#[cfg(feature = "lzma")]
 #[test]
-#[should_panic(expected = "cannot determine archive file type")]
 fn test_extract_tar_lzma() {
     assert_extract_archive("utf-8.tar.lzma");
 }
