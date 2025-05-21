@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v0.8.0](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.8.0) - 2025-05-21
+
 ### Added
 
 - Support `.tar.xz` and `.tar.lzma` archives
