@@ -54,4 +54,4 @@ lzma = ["lzma-rs"]
 [dev-dependencies]
 httpmock = "0.7"
 assert_cmd = "1.0"
-predicates = "2.1"
+predicates = "3.0"
