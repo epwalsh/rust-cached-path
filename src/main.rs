@@ -68,7 +68,7 @@ fn main() -> Result<()> {
     env_logger::init();
     let opt = Opt::from_args();
 
-    debug!("{:?}", opt);
+    debug!("{opt:?}");
 
     let cache = build_cache_from_opt(&opt)?;
     let options = Options::new(opt.subdir.as_deref(), opt.extract, opt.force);

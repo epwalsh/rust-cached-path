@@ -91,6 +91,7 @@ impl FullDownloadBar {
                     .template(
                         "{msg:.bold.cyan/blue} [{bar:20.cyan/blue}][{percent}%] {bytes}/{total_bytes:.bold} |{bytes_per_sec}|",
                     )
+                    .expect("Failed to set progress bar template")
                 );
                 bar
             }
@@ -115,7 +116,8 @@ impl FullDownloadBar {
                         ])
                         .template(
                             "{msg:.bold.cyan/blue} [{spinner:.cyan/blue}] {bytes:.bold} |{bytes_per_sec}|",
-                        ),
+                        )
+                        .expect("Failed to set spinner progress bar template"),
                 );
                 bar
             }
@@ -124,7 +126,9 @@ impl FullDownloadBar {
         // Update every 1 MBs.
         // NOTE: If we don't set this, the updates happen WAY too frequently and it makes downloads
         // take about twice as long.
-        bar.set_draw_delta(1_000_000);
+        // In indicatif 0.17, set_draw_delta was removed. We can use enable_steady_tick instead
+        // or rely on the default drawing behavior which should be more efficient.
+        bar.enable_steady_tick(std::time::Duration::from_millis(100));
         Self { bar }
     }
 }
@@ -138,9 +142,10 @@ impl DownloadBar for FullDownloadBar {
         self.bar.set_message("Downloaded");
         self.bar.set_style(
             indicatif::ProgressStyle::default_bar()
-                .template("{msg:.green.bold} {total_bytes:.bold} in {elapsed}"),
+                .template("{msg:.green.bold} {total_bytes:.bold} in {elapsed}")
+                .expect("Failed to set finish progress bar template"),
         );
-        self.bar.finish_at_current_pos();
+        self.bar.finish();
     }
 }
 
@@ -154,12 +159,11 @@ impl LightDownloadBar {
     pub(crate) fn new(resource: &str, content_length: Option<u64>) -> Self {
         if let Some(size) = content_length {
             eprint!(
-                "Downloading {} [{}]...",
-                resource,
+                "Downloading {resource} [{}]...",
                 indicatif::HumanBytes(size)
             );
         } else {
-            eprint!("Downloading {}...", resource);
+            eprint!("Downloading {resource}...");
         }
         io::stderr().flush().ok();
         Self {

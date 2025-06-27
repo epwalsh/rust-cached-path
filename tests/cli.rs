@@ -35,7 +35,7 @@ fn test_remote_file() -> Result<(), Box<dyn std::error::Error>> {
     // remove newline at the end.
     stdout.pop();
     let path = PathBuf::from(stdout);
-    println!("{:?}", path);
+    println!("{path:?}");
     assert!(path.is_file());
 
     // Ensure cached version exactly matches local version.
@@ -76,7 +76,7 @@ fn test_extract_remote_file() -> Result<(), Box<dyn std::error::Error>> {
     // remove newline at the end.
     stdout.pop();
     let path = PathBuf::from(stdout);
-    println!("{:?}", path);
+    println!("{path:?}");
     assert!(path.is_dir());
     assert!(path.join("dummy.txt").is_file());
     assert!(path.join("folder").is_dir());
@@ -100,7 +100,7 @@ fn test_extract_local_file() -> Result<(), Box<dyn std::error::Error>> {
     // remove newline at the end.
     stdout.pop();
     let path = PathBuf::from(stdout);
-    println!("{:?}", path);
+    println!("{path:?}");
     assert!(path.is_dir());
     assert!(path.join("dummy.txt").is_file());
     assert!(path.join("folder").is_dir());

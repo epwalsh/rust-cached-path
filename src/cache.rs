@@ -272,7 +272,7 @@ impl Cache {
         if !resource.starts_with("http") {
             // If resource doesn't look like a URL, treat as local path, but return
             // an error if the path doesn't exist.
-            info!("Treating {} as local file", resource);
+            info!("Treating {resource} as local file");
             cached_path = PathBuf::from(resource);
 
             if !cached_path.is_file() {
@@ -311,13 +311,13 @@ impl Cache {
 
         if let Some(dirpath) = extraction_dir {
             // Extract archive.
-            debug!("Treating {} as archive", resource);
+            debug!("Treating {resource} as archive");
 
             fs::create_dir_all(dirpath.parent().unwrap())?;
 
             // Need to acquire a lock here to make sure we don't try to extract
             // the same archive in parallel from multiple processes.
-            debug!("Acquiring lock on extraction directory for {}", resource);
+            debug!("Acquiring lock on extraction directory for {resource}");
             let lock_path = format!("{}.lock", dirpath.to_str().unwrap());
             let filelock = OpenOptions::new()
                 .read(true)
@@ -326,17 +326,17 @@ impl Cache {
                 .truncate(true)
                 .open(lock_path)?;
             filelock.lock_exclusive()?;
-            debug!("Lock on extraction directory acquired for {}", resource);
+            debug!("Lock on extraction directory acquired for {resource}");
 
             if !dirpath.is_dir() {
-                info!("Extracting {} to {:?}", resource, dirpath);
+                info!("Extracting {resource} to {dirpath:?}");
                 let format = ArchiveFormat::parse_from_extension(&cached_path)?;
                 extract_archive(&cached_path, &dirpath, &format)?;
             }
 
             fs2::FileExt::unlock(&filelock)?;
             //filelock.unlock()?;
-            debug!("Lock released on extraction directory for {}", resource);
+            debug!("Lock released on extraction directory for {resource}");
 
             Ok(dirpath)
         } else {
@@ -395,7 +395,7 @@ impl Cache {
             let versions = self.find_existing(resource, subdir); // already sorted, latest is first.
             if self.offline {
                 if !versions.is_empty() {
-                    info!("Found existing cached version of {}", resource);
+                    info!("Found existing cached version of {resource}");
                     return Ok(versions[0].clone());
                 } else {
                     error!("Offline mode is enabled but no cached versions of resource exist.");
@@ -403,7 +403,7 @@ impl Cache {
                 }
             } else if !versions.is_empty() && versions[0].is_fresh(self.freshness_lifetime) {
                 // Oh hey, the latest version is still fresh!
-                info!("Latest cached version of {} is still fresh", resource);
+                info!("Latest cached version of {resource} is still fresh");
                 return Ok(versions[0].clone());
             }
         } else if self.offline {
@@ -420,7 +420,7 @@ impl Cache {
 
         // Before going further we need to obtain a lock on the file to provide
         // parallel downloads of the same resource.
-        debug!("Acquiring lock for cache of {}", resource);
+        debug!("Acquiring lock for cache of {resource}");
         let lock_path = format!("{}.lock", path.to_str().unwrap());
         let filelock = OpenOptions::new()
             .read(true)
@@ -429,30 +429,30 @@ impl Cache {
             .truncate(true)
             .open(lock_path)?;
         filelock.lock_exclusive()?;
-        debug!("Lock acquired for {}", resource);
+        debug!("Lock acquired for {resource}");
 
         if path.exists() {
             if !force {
                 // Oh cool! The cache is up-to-date according to the ETAG.
                 // We'll return the up-to-date version and clean up any other
                 // dangling ones.
-                info!("Cached version of {} is up-to-date", resource);
+                info!("Cached version of {resource} is up-to-date");
                 //filelock.unlock()?;
                 fs2::FileExt::unlock(&filelock)?;
                 return Meta::from_cache(&path);
             } else {
-                warn!("Forcing re-download of {} despite cache hit", resource);
+                warn!("Forcing re-download of {resource} despite cache hit");
             }
         }
 
         // No up-to-date version cached, so we have to try downloading it.
         let meta = self.try_download_resource(resource, &url, &path, &etag)?;
 
-        info!("New version of {} cached", resource);
+        info!("New version of {resource} cached");
 
         //filelock.unlock()?;
         fs2::FileExt::unlock(&filelock)?;
-        debug!("Lock released for {}", resource);
+        debug!("Lock released for {resource}");
 
         Ok(meta)
     }
@@ -500,18 +500,17 @@ impl Cache {
                 }
                 Err(err) => {
                     if retries >= self.max_retries {
-                        error!("Max retries exceeded for {}", resource);
+                        error!("Max retries exceeded for {resource}");
                         return Err(err);
                     }
                     if !err.is_retriable() {
-                        error!("Download failed for {} with fatal error, {}", resource, err);
+                        error!("Download failed for {resource} with fatal error, {err}");
                         return Err(err);
                     }
                     retries += 1;
                     let retry_delay = self.get_retry_delay(retries);
                     warn!(
-                        "Download failed for {}: {}\nRetrying in {} milliseconds...",
-                        resource, err, retry_delay
+                        "Download failed for {resource}: {err}\nRetrying in {retry_delay} milliseconds..."
                     );
                     thread::sleep(time::Duration::from_millis(u64::from(retry_delay)));
                 }
@@ -526,7 +525,7 @@ impl Cache {
         path: &Path,
         etag: &Option<String>,
     ) -> Result<Meta, Error> {
-        debug!("Attempting connection to {}", url);
+        debug!("Attempting connection to {url}");
 
         let mut response = self
             .http_client
@@ -534,7 +533,7 @@ impl Cache {
             .send()?
             .error_for_status()?;
 
-        debug!("Opened connection to {}", url);
+        debug!("Opened connection to {url}");
 
         // First we make a temporary file and download the contents of the resource into it.
         // Otherwise if we wrote directly to the cache file and the download got
@@ -542,7 +541,7 @@ impl Cache {
         let tempfile = NamedTempFile::new_in(path.parent().unwrap())?;
         let mut tempfile_write_handle = OpenOptions::new().write(true).open(tempfile.path())?;
 
-        info!("Starting download of {}", url);
+        info!("Starting download of {url}");
 
         let bytes = if let Some(progress_bar) = &self.progress_bar {
             let mut download_wrapper = progress_bar.wrap_download(
@@ -557,7 +556,7 @@ impl Cache {
             response.copy_to(&mut tempfile_write_handle)?
         };
 
-        info!("Downloaded {} bytes", bytes);
+        info!("Downloaded {bytes} bytes");
         debug!("Writing meta file");
 
         let meta = Meta::new(
@@ -568,7 +567,7 @@ impl Cache {
         );
         meta.to_file()?;
 
-        debug!("Renaming temp file to cache location for {}", url);
+        debug!("Renaming temp file to cache location for {url}");
 
         fs::rename(tempfile.path(), path)?;
 
@@ -582,18 +581,17 @@ impl Cache {
                 Ok(etag) => return Ok(etag),
                 Err(err) => {
                     if retries >= self.max_retries {
-                        error!("Max retries exceeded for {}", resource);
+                        error!("Max retries exceeded for {resource}");
                         return Err(err);
                     }
                     if !err.is_retriable() {
-                        error!("ETAG fetch for {} failed with fatal error", resource);
+                        error!("ETAG fetch for {resource} failed with fatal error");
                         return Err(err);
                     }
                     retries += 1;
                     let retry_delay = self.get_retry_delay(retries);
                     warn!(
-                        "ETAG fetch failed for {}, retrying in {} milliseconds...",
-                        resource, retry_delay
+                        "ETAG fetch failed for {resource}, retrying in {retry_delay} milliseconds..."
                     );
                     thread::sleep(time::Duration::from_millis(u64::from(retry_delay)));
                 }
@@ -602,7 +600,7 @@ impl Cache {
     }
 
     fn get_etag(&self, url: &reqwest::Url) -> Result<Option<String>, Error> {
-        debug!("Fetching ETAG for {}", url);
+        debug!("Fetching ETAG for {url}");
         let response = self
             .http_client
             .head(url.clone())
@@ -612,7 +610,7 @@ impl Cache {
             if let Ok(s) = etag.to_str() {
                 Ok(Some(s.into()))
             } else {
-                debug!("No ETAG for {}", url);
+                debug!("No ETAG for {url}");
                 Ok(None)
             }
         } else {
@@ -630,7 +628,7 @@ impl Cache {
         let resource_hash = hash_str(resource);
         let mut filename = if let Some(tag) = etag {
             let etag_hash = hash_str(&tag[..]);
-            format!("{}.{}", resource_hash, etag_hash)
+            format!("{resource_hash}.{etag_hash}")
         } else {
             resource_hash
         };
