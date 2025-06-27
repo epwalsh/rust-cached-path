@@ -159,12 +159,11 @@ impl LightDownloadBar {
     pub(crate) fn new(resource: &str, content_length: Option<u64>) -> Self {
         if let Some(size) = content_length {
             eprint!(
-                "Downloading {} [{}]...",
-                resource,
+                "Downloading {resource} [{}]...",
                 indicatif::HumanBytes(size)
             );
         } else {
-            eprint!("Downloading {}...", resource);
+            eprint!("Downloading {resource}...");
         }
         io::stderr().flush().ok();
         Self {

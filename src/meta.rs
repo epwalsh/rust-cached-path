@@ -48,7 +48,7 @@ impl Meta {
     pub(crate) fn meta_path(resource_path: &Path) -> PathBuf {
         let mut meta_path = PathBuf::from(resource_path);
         let resource_file_name = meta_path.file_name().unwrap().to_str().unwrap();
-        let meta_file_name = format!("{}.meta", resource_file_name);
+        let meta_file_name = format!("{resource_file_name}.meta");
         meta_path.set_file_name(&meta_file_name[..]);
         meta_path
     }
@@ -75,11 +75,11 @@ impl Meta {
     /// Read `Meta` from a path.
     pub(crate) fn from_path(path: &Path) -> Result<Self, Error> {
         if !path.is_file() {
-            return Err(Error::CacheCorrupted(format!("missing meta at {:?}", path)));
+            return Err(Error::CacheCorrupted(format!("missing meta at {path:?}")));
         }
         let serialized = fs::read_to_string(path)?;
         let meta: Meta = serde_json::from_str(&serialized[..])
-            .map_err(|e| Error::CacheCorrupted(format!("invalid meta at {:?}: {:?}", path, e)))?;
+            .map_err(|e| Error::CacheCorrupted(format!("invalid meta at {path:?}: {e:?}")))?;
         Ok(meta)
     }
 
