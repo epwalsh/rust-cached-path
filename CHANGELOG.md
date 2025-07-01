@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v0.8.1](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.8.1) - 2025-07-01
+
 ### Changed
 
 - Updated `indicatif` dependency from 0.16 to 0.17.11
