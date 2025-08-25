@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v0.9.0](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.9.0) - 2025-08-25
+
+### Changed
+
+- Updated `reqwest` dependency from 0.11 to 0.12.
+
 ## [v0.8.1](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.8.1) - 2025-07-01
 
 ### Changed
