@@ -1,3 +1,4 @@
+use assert_cmd::cargo;
 use assert_cmd::prelude::*; // Add methods on commands
 use predicates::prelude::*; // Used for writing assertions
 use std::fs;
@@ -8,7 +9,7 @@ use tempfile::tempdir;
 
 #[test]
 fn file_doesnt_exist() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("cached-path")?;
+    let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
     let cache_dir = tempdir().unwrap().path().to_owned();
 
     cmd.arg("--dir")
@@ -23,7 +24,7 @@ fn file_doesnt_exist() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_remote_file() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("cached-path")?;
+    let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
     let cache_dir = tempdir().unwrap().path().to_owned();
 
     cmd.arg("--dir")
@@ -62,7 +63,7 @@ fn test_remote_file() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_extract_remote_file() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("cached-path")?;
+    let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
     let cache_dir = tempdir().unwrap().path().to_owned();
 
     cmd.arg("--dir")
@@ -87,7 +88,7 @@ fn test_extract_remote_file() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_extract_local_file() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("cached-path")?;
+    let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
     let cache_dir = tempdir().unwrap().path().to_owned();
 
     cmd.arg("--dir")
