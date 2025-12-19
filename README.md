@@ -20,7 +20,7 @@ to access files agnostic to where they are located.
 
 This is based on the Python library [`allenai/cached_path`](https://github.com/allenai/cached_path).
 
-## Installation
+### Installation
 
 `cached-path` can be used as both a library and a command-line tool. To install `cached-path`
 as a command-line tool, run
@@ -29,7 +29,7 @@ as a command-line tool, run
 cargo install --features build-binary cached-path
 ```
 
-## Usage
+### Usage
 
 For remote resources, `cached-path` downloads and caches the resource, using the ETAG
 to know when to update the cache. The path returned is the local path to the latest
