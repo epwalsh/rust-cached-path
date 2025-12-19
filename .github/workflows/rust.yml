@@ -30,6 +30,9 @@ jobs:
           - name: Test (rustls-tls)
             run: cargo test --features build-binary,lzma,rustls-tls
 
+          - name: Test (default features)
+            run: cargo test
+
         include:
           - os: ubuntu-latest
             rust: stable

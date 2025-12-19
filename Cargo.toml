@@ -37,7 +37,7 @@ thiserror = "1.0"
 flate2 = "1.0"
 tar = "0.4"
 zip = "0.6"
-indicatif = "0.17.11"
+indicatif = { version = "0.17.11", optional = true }
 env_logger = { version = "0.10", optional = true }
 structopt = { version = "0.3", optional = true }
 color-eyre = { version = "0.6", optional = true }
@@ -46,10 +46,11 @@ lzma-rs = { version = "0.3", optional = true }
 
 [features]
 default = ["default-tls"]
-build-binary = ["env_logger", "structopt", "color-eyre"]
+build-binary = ["env_logger", "structopt", "color-eyre", "progress-bar"]
 rustls-tls = ["reqwest/rustls-tls"]
 default-tls = ["reqwest/default-tls"]
 lzma = ["lzma-rs"]
+progress-bar = ["indicatif"]
 
 [dev-dependencies]
 httpmock = "0.7"
