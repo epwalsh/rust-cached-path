@@ -96,11 +96,13 @@ pub(crate) mod archives;
 mod cache;
 mod error;
 pub(crate) mod meta;
+#[cfg(feature = "progress-bar")]
 mod progress_bar;
 pub(crate) mod utils;
 
 pub use crate::cache::{Cache, CacheBuilder, Options};
 pub use crate::error::Error;
+#[cfg(feature = "progress-bar")]
 pub use crate::progress_bar::ProgressBar;
 
 /// Get the cached path to a resource.

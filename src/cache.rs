@@ -14,7 +14,9 @@ use tempfile::NamedTempFile;
 
 use crate::archives::{extract_archive, ArchiveFormat};
 use crate::utils::hash_str;
-use crate::{meta::Meta, Error, ProgressBar};
+#[cfg(feature = "progress-bar")]
+use crate::ProgressBar;
+use crate::{meta::Meta, Error};
 
 /// Builder to facilitate creating [`Cache`] objects.
 #[derive(Debug)]
@@ -30,6 +32,7 @@ struct Config {
     max_backoff: u32,
     freshness_lifetime: Option<u64>,
     offline: bool,
+    #[cfg(feature = "progress-bar")]
     progress_bar: Option<ProgressBar>,
 }
 
@@ -44,6 +47,7 @@ impl CacheBuilder {
                 max_backoff: 5000,
                 freshness_lifetime: None,
                 offline: false,
+                #[cfg(feature = "progress-bar")]
                 progress_bar: Some(ProgressBar::default()),
             },
         }
@@ -113,6 +117,7 @@ impl CacheBuilder {
     /// Set the type of progress bar to use.
     ///
     /// The default is `Some(ProgressBar::Full)`.
+    #[cfg(feature = "progress-bar")]
     pub fn progress_bar(mut self, progress_bar: Option<ProgressBar>) -> CacheBuilder {
         self.config.progress_bar = progress_bar;
         self
@@ -136,6 +141,7 @@ impl CacheBuilder {
             max_backoff: self.config.max_backoff,
             freshness_lifetime: self.config.freshness_lifetime,
             offline: self.config.offline,
+            #[cfg(feature = "progress-bar")]
             progress_bar: self.config.progress_bar,
         })
     }
@@ -206,6 +212,7 @@ pub struct Cache {
     /// If set to `true`, no HTTP calls will be made.
     offline: bool,
     /// The verbosity level of the progress bar.
+    #[cfg(feature = "progress-bar")]
     progress_bar: Option<ProgressBar>,
     /// The HTTP client used to fetch remote resources.
     http_client: Client,
@@ -543,6 +550,7 @@ impl Cache {
 
         info!("Starting download of {url}");
 
+        #[cfg(feature = "progress-bar")]
         let bytes = if let Some(progress_bar) = &self.progress_bar {
             let mut download_wrapper = progress_bar.wrap_download(
                 resource,
@@ -555,6 +563,8 @@ impl Cache {
         } else {
             response.copy_to(&mut tempfile_write_handle)?
         };
+        #[cfg(not(feature = "progress-bar"))]
+        let bytes = response.copy_to(&mut tempfile_write_handle)?;
 
         info!("Downloaded {bytes} bytes");
         debug!("Writing meta file");

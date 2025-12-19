@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::process::Command; // Run programs
 use tempfile::tempdir;
 
+#[cfg(feature = "build-binary")]
 #[test]
 fn file_doesnt_exist() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
@@ -22,6 +23,7 @@ fn file_doesnt_exist() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "build-binary")]
 #[test]
 fn test_remote_file() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
@@ -61,6 +63,7 @@ fn test_remote_file() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "build-binary")]
 #[test]
 fn test_extract_remote_file() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
@@ -86,6 +89,7 @@ fn test_extract_remote_file() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "build-binary")]
 #[test]
 fn test_extract_local_file() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
