@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Added a `progress-bar` feature to enable the `indicatif` dependency.
+
 ## [v0.9.0](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.9.0) - 2025-08-25
 
 ### Changed
