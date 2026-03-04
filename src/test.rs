@@ -113,8 +113,8 @@ fn test_cached_path_remote_file() {
     // Get the cached path.
     let path = cache.cached_path(resource).unwrap();
 
-    assert_eq!(fixture.head.hits(), 1);
-    assert_eq!(fixture.get.hits(), 1);
+    assert_eq!(fixture.head.calls(), 1);
+    assert_eq!(fixture.get.calls(), 1);
 
     // Ensure the file and meta exist.
     assert!(path.is_file());
@@ -134,8 +134,8 @@ fn test_cached_path_remote_file() {
     assert!(Meta::meta_path(&path).is_file());
 
     // Didn't have to call HEAD or GET again.
-    assert_eq!(fixture.head.hits(), 1);
-    assert_eq!(fixture.get.hits(), 1);
+    assert_eq!(fixture.head.calls(), 1);
+    assert_eq!(fixture.get.calls(), 1);
 
     // Now expire the resource to continue testing.
     meta.expires = None;
@@ -155,8 +155,8 @@ fn test_cached_path_remote_file() {
     assert_eq!(same_path, path);
     assert!(path.is_file());
     assert!(Meta::meta_path(&path).is_file());
-    assert_eq!(fixture.head.hits(), 2);
-    assert_eq!(fixture.get.hits(), 1);
+    assert_eq!(fixture.head.calls(), 2);
+    assert_eq!(fixture.get.calls(), 1);
 
     // Now update the resource.
     drop(fixture);
@@ -165,8 +165,8 @@ fn test_cached_path_remote_file() {
     // Get the new cached path.
     let new_path = cache.cached_path(&fixture.url).unwrap();
 
-    assert_eq!(fixture.head.hits(), 1);
-    assert_eq!(fixture.get.hits(), 1);
+    assert_eq!(fixture.head.calls(), 1);
+    assert_eq!(fixture.get.calls(), 1);
 
     // This should be different from the old path.
     assert_ne!(path, new_path);
@@ -202,8 +202,8 @@ fn test_cached_path_remote_file_in_subdir() {
         .cached_path_with_options(&fixture.url, &Options::default().subdir("target"))
         .unwrap();
 
-    assert_eq!(fixture.head.hits(), 1);
-    assert_eq!(fixture.get.hits(), 1);
+    assert_eq!(fixture.head.calls(), 1);
+    assert_eq!(fixture.get.calls(), 1);
 
     // Ensure the file and meta exist.
     assert!(path.is_file());
