@@ -1,7 +1,7 @@
 use fs2::FileExt;
 use glob::glob;
 use log::{debug, error, info, warn};
-use rand::distributions::{Distribution, Uniform};
+use rand::RngExt;
 use reqwest::blocking::{Client, ClientBuilder};
 use reqwest::header::ETAG;
 use std::default::Default;
@@ -484,10 +484,9 @@ impl Cache {
     }
 
     fn get_retry_delay(&self, retries: u32) -> u32 {
-        let between = Uniform::from(0..1000);
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rngs::ThreadRng::default();
         std::cmp::min(
-            2u32.pow(retries - 1) * 1000 + between.sample(&mut rng),
+            2u32.pow(retries - 1) * 1000 + rng.random_range(0..1000),
             self.max_backoff,
         )
     }

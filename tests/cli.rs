@@ -10,7 +10,7 @@ use tempfile::tempdir;
 #[cfg(feature = "build-binary")]
 #[test]
 fn file_doesnt_exist() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
+    let mut cmd = Command::new(cargo::cargo_bin!("cached-path"));
     let cache_dir = tempdir().unwrap().path().to_owned();
 
     cmd.arg("--dir")
@@ -26,7 +26,7 @@ fn file_doesnt_exist() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "build-binary")]
 #[test]
 fn test_remote_file() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
+    let mut cmd = Command::new(cargo::cargo_bin!("cached-path"));
     let cache_dir = tempdir().unwrap().path().to_owned();
 
     cmd.arg("--dir")
@@ -66,7 +66,7 @@ fn test_remote_file() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "build-binary")]
 #[test]
 fn test_extract_remote_file() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
+    let mut cmd = Command::new(cargo::cargo_bin!("cached-path"));
     let cache_dir = tempdir().unwrap().path().to_owned();
 
     cmd.arg("--dir")
@@ -92,7 +92,7 @@ fn test_extract_remote_file() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "build-binary")]
 #[test]
 fn test_extract_local_file() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::new(cargo::cargo_bin("cached-path"));
+    let mut cmd = Command::new(cargo::cargo_bin!("cached-path"));
     let cache_dir = tempdir().unwrap().path().to_owned();
 
     cmd.arg("--dir")
