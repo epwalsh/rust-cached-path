@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Added a `zip-all-codecs` feature that restores `zip`'s full codec set.
+
+### Changed
+
+- `zip` is now pulled with `default-features = false` and only the `deflate` and `time` features. Its default features enable every codec it supports, of which only deflate is needed to extract the archives this crate handles; enable `zip-all-codecs` to get the others back.
+
 ## [v0.10.1](https://github.com/epwalsh/rust-cached-path/releases/tag/v0.10.1) - 2026-03-04
 
 ### Changed
